@@ -258,6 +258,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
     const filePath = ctx.StringLiteral[0].image;
     // Убираем кавычки
     const cleanPath = filePath.substring(1, filePath.length - 1);
+    const sourcePath = ctx.sourcePath ? this.visit(ctx.sourcePath[0]) : null;
 
     if (ctx.aliasSource && ctx.aliasName) {
       for (let i = 0; i < ctx.aliasSource.length; i++) {
@@ -269,7 +270,8 @@ class JQLToAstVisitor extends BaseCstVisitor {
 
     return {
       type: "FromClause",
-      file: cleanPath
+      file: cleanPath,
+      sourcePath: sourcePath
     };
   }
 
@@ -396,13 +398,13 @@ const examples = [
   "select [settings.theme.color, name] from 'input.json'",
   "select [new_age_key: age, new_name_key: name, profile] from 'input.json'",
   "select [s: sum(a, b, c), average: avg(a, b)] from 'input.json'",
-  "select [s: a + b + c] from 'input.json'",
+  "select [s: a + b + c] from 'input.json'[result.success]",
   "select [d: a - b] from 'input.json'",
   "select [m: a * b] from 'input.json'",
   "select [d: a / b] from 'input.json'",
   "select [result: (a + b) * c] from 'input.json'",
   "select [trimedLeft: trimLeft('http://', url), trimedRight: trimRight('.com', url)] from 'input.json'",
-  "select [subscribers_number: length($user.subscribers), subscriber_name_length: length($user.$name)] from 'input.json' alias users[3] as user, profile.name as name",
+  "select [subscribers_number: length($user.subscribers), name_length: length($user.$name)] from 'input.json' alias users[3] as user, profile.name as name",
   "select total_sum: sum(a, b), total_avg: avg(c, d), e_number: count(e) from 'input.json'",
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
   "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",

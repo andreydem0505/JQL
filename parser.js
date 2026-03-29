@@ -265,14 +265,20 @@ export class JQLParser extends CstParser {
             $.CONSUME(StringLiteral);
 
             $.OPTION(() => {
+                $.CONSUME(LSquare);
+                $.SUBRULE($.fieldPath, { LABEL: "sourcePath" });
+                $.CONSUME(RSquare);
+            });
+
+            $.OPTION2(() => {
                 $.CONSUME(AliasKeyword);
-                $.SUBRULE($.fieldPath, { LABEL: "aliasSource" });
+                $.SUBRULE2($.fieldPath, { LABEL: "aliasSource" });
                 $.CONSUME(AsKeyword);
                 $.CONSUME(Identifier, { LABEL: "aliasName" });
 
                 $.MANY(() => {
                     $.CONSUME(Comma);
-                    $.SUBRULE2($.fieldPath, { LABEL: "aliasSource" });
+                    $.SUBRULE3($.fieldPath, { LABEL: "aliasSource" });
                     $.CONSUME2(AsKeyword);
                     $.CONSUME2(Identifier, { LABEL: "aliasName" });
                 });
