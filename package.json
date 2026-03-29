@@ -1,0 +1,16 @@
+{
+  "name": "jql",
+  "version": "1.0.0",
+  "description": "JSON Query Language - SQL-like parser for JSON files",
+  "main": "analyser.js",
+  "scripts": {
+    "start": "node analyser.js"
+  },
+  "keywords": ["json", "query", "parser", "sql"],
+  "author": "Dementiev Andrey",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "chevrotain": "^11.0.3"
+  }
+}
