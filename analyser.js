@@ -123,6 +123,8 @@ class JQLToAstVisitor extends BaseCstVisitor {
       return "max";
     } else if (ctx.Min) {
       return "min";
+    } else if (ctx.Length) {
+      return "length";
     }  else if (ctx.TrimLeft) {
       return "trimLeft";
     } else if (ctx.TrimRight) {
@@ -353,11 +355,12 @@ const examples = [
   "select [cleaned: trimLeft('http://', url), name] from 'input.json'",
   "select [cleaned: trimRight('.com', url), name] from 'input.json'",
   "select [users[3].subscribers[0].name] from 'input.json'",
+  "select [subscribers_number: length(users[3].subscribers), subscriber_name_length: length(users[3].subscribers[0].name)] from 'input.json'",
   "select total_sum: sum(a, b), total_avg: avg(c, d), e_number: count(e) from 'input.json'",
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
   "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",
   "select sum_a: sum(a) where c != 4 from 'input.json'",
-  "select s: sum(a + avg(b, c)) from 'input.json'"
+  "select s: sum(a * avg(b, c)) from 'input.json'"
 ];
 
 let success = true;

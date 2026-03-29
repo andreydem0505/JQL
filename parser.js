@@ -33,6 +33,7 @@ const Avg = createToken({ name: "Avg", pattern: /avg/i, longer_alt: Identifier }
 const Count = createToken({ name: "Count", pattern: /count/i, longer_alt: Identifier });
 const Max = createToken({ name: "Max", pattern: /max/i, longer_alt: Identifier });
 const Min = createToken({ name: "Min", pattern: /min/i, longer_alt: Identifier });
+const Length = createToken({ name: "Length", pattern: /length/i, longer_alt: Identifier });
 const TrimLeft = createToken({ name: "TrimLeft", pattern: /trimLeft/i, longer_alt: Identifier });
 const TrimRight = createToken({ name: "TrimRight", pattern: /trimRight/i, longer_alt: Identifier });
 
@@ -55,6 +56,7 @@ const allTokens = [
     Count,
     Max,
     Min,
+    Length,
     TrimLeft,
     TrimRight,
 
@@ -223,6 +225,7 @@ export class JQLParser extends CstParser {
                 { ALT: () => $.CONSUME(Count) },
                 { ALT: () => $.CONSUME(Max) },
                 { ALT: () => $.CONSUME(Min) },
+                { ALT: () => $.CONSUME(Length) },
                 { ALT: () => $.CONSUME(TrimLeft) },
                 { ALT: () => $.CONSUME(TrimRight) }
             ]);
