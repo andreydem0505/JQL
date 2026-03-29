@@ -5,6 +5,8 @@ const From = createToken({ name: "From", pattern: /from/i });
 const Where = createToken({ name: "Where", pattern: /where/i });
 const And = createToken({ name: "And", pattern: /and/i });
 const Or = createToken({ name: "Or", pattern: /or/i });
+const AliasKeyword = createToken({ name: "AliasKeyword", pattern: /alias/i });
+const AsKeyword = createToken({ name: "AsKeyword", pattern: /as/i });
 
 const LSquare = createToken({ name: "LSquare", pattern: /\[/ });
 const RSquare = createToken({ name: "RSquare", pattern: /]/ });
@@ -23,9 +25,10 @@ const Neq = createToken({ name: "Neq", pattern: /!=/ });
 const Gt = createToken({ name: "Gt", pattern: />/ });
 const Lt = createToken({ name: "Lt", pattern: /</ });
 const Eq = createToken({ name: "Eq", pattern: /=/ });
+const Dollar = createToken({ name: "Dollar", pattern: /\$/ });
 
 const NumberLiteral = createToken({ name: "NumberLiteral", pattern: /\d+(?:\.\d+)?/ });
-const Identifier = createToken({ name: "Identifier", pattern: /[^\s\[\]\(\),:.+\-*/'"<>=!]+/ });
+const Identifier = createToken({ name: "Identifier", pattern: /[^\s\$\[\]\(\),:.+\-*/'"<>=!]+/ });
 const StringLiteral = createToken({ name: "StringLiteral", pattern: /'[^']*'/ });
 
 const Sum = createToken({ name: "Sum", pattern: /sum/i, longer_alt: Identifier });
@@ -51,6 +54,8 @@ const allTokens = [
     Where,
     And,
     Or,
+    AliasKeyword,
+    AsKeyword,
     Sum,
     Avg,
     Count,
@@ -77,6 +82,7 @@ const allTokens = [
     Lt,
     Eq,
     Minus,
+    Dollar,
 
     NumberLiteral,
     Identifier,
@@ -193,9 +199,16 @@ export class JQLParser extends CstParser {
             $.AT_LEAST_ONE_SEP({
                 SEP: Dot,
                 DEF: () => {
-                    $.SUBRULE($.pathSegment);
+                    $.SUBRULE($.pathPart);
                 }
             });
+        });
+
+        $.RULE("pathPart", () => {
+            $.OPTION(() => {
+                $.CONSUME(Dollar);
+            });
+            $.SUBRULE($.pathSegment);
         });
 
         $.RULE("pathSegment", () => {
@@ -250,6 +263,20 @@ export class JQLParser extends CstParser {
         $.RULE("fromClause", () => {
             $.CONSUME(From);
             $.CONSUME(StringLiteral);
+
+            $.OPTION(() => {
+                $.CONSUME(AliasKeyword);
+                $.SUBRULE($.fieldPath, { LABEL: "aliasSource" });
+                $.CONSUME(AsKeyword);
+                $.CONSUME(Identifier, { LABEL: "aliasName" });
+
+                $.MANY(() => {
+                    $.CONSUME(Comma);
+                    $.SUBRULE2($.fieldPath, { LABEL: "aliasSource" });
+                    $.CONSUME2(AsKeyword);
+                    $.CONSUME2(Identifier, { LABEL: "aliasName" });
+                });
+            });
         });
 
         $.RULE("whereClause", () => {

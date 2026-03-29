@@ -7,14 +7,18 @@ const BaseCstVisitor = parserInstance.getBaseCstVisitorConstructor();
 class JQLToAstVisitor extends BaseCstVisitor {
   constructor() {
     super();
+    this.aliasMap = new Map();
     this.validateVisitor();
   }
 
   query(ctx) {
+    this.aliasMap.clear();
+    const from = ctx.fromClause ? this.visit(ctx.fromClause) : null;
+
     return {
       type: "Query",
       select: this.visit(ctx.selectClause),
-      from: ctx.fromClause ? this.visit(ctx.fromClause) : null,
+      from: from,
       where: ctx.whereClause ? this.visit(ctx.whereClause) : null
     };
   }
@@ -86,9 +90,46 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   fieldPath(ctx) {
+    const parts = ctx.pathPart.map(partCtx => this.visit(partCtx));
+    const resolvedSegments = [];
+
+    for (const part of parts) {
+      if (!part.isAlias) {
+        resolvedSegments.push(part.segment);
+        continue;
+      }
+
+      const aliasName = part.segment.key;
+      const aliasTarget = this.aliasMap.get(aliasName);
+
+      if (!aliasTarget) {
+        throw new Error(`Неизвестный alias: ${aliasName}`);
+      }
+
+      const clonedAliasSegments = aliasTarget.segments.map(segment => ({
+        type: "PathSegment",
+        key: segment.key,
+        indexes: [...segment.indexes]
+      }));
+
+      if (part.segment.indexes.length > 0 && clonedAliasSegments.length > 0) {
+        const last = clonedAliasSegments[clonedAliasSegments.length - 1];
+        last.indexes.push(...part.segment.indexes);
+      }
+
+      resolvedSegments.push(...clonedAliasSegments);
+    }
+
     return {
       type: "FieldPath",
-      segments: ctx.pathSegment.map(segmentCtx => this.visit(segmentCtx))
+      segments: resolvedSegments
+    };
+  }
+
+  pathPart(ctx) {
+    return {
+      isAlias: !!ctx.Dollar,
+      segment: this.visit(ctx.pathSegment)
     };
   }
 
@@ -217,6 +258,14 @@ class JQLToAstVisitor extends BaseCstVisitor {
     const filePath = ctx.StringLiteral[0].image;
     // Убираем кавычки
     const cleanPath = filePath.substring(1, filePath.length - 1);
+
+    if (ctx.aliasSource && ctx.aliasName) {
+      for (let i = 0; i < ctx.aliasSource.length; i++) {
+        const aliasName = ctx.aliasName[i].image;
+        const aliasSourcePath = this.visit(ctx.aliasSource[i]);
+        this.aliasMap.set(aliasName, aliasSourcePath);
+      }
+    }
 
     return {
       type: "FromClause",
@@ -352,10 +401,8 @@ const examples = [
   "select [m: a * b] from 'input.json'",
   "select [d: a / b] from 'input.json'",
   "select [result: (a + b) * c] from 'input.json'",
-  "select [cleaned: trimLeft('http://', url), name] from 'input.json'",
-  "select [cleaned: trimRight('.com', url), name] from 'input.json'",
-  "select [users[3].subscribers[0].name] from 'input.json'",
-  "select [subscribers_number: length(users[3].subscribers), subscriber_name_length: length(users[3].subscribers[0].name)] from 'input.json'",
+  "select [trimedLeft: trimLeft('http://', url), trimedRight: trimRight('.com', url)] from 'input.json'",
+  "select [subscribers_number: length($user.subscribers), subscriber_name_length: length($user.$name)] from 'input.json' alias users[3] as user, profile.name as name",
   "select total_sum: sum(a, b), total_avg: avg(c, d), e_number: count(e) from 'input.json'",
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
   "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",
