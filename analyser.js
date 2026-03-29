@@ -86,12 +86,22 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   fieldPath(ctx) {
-    const path = ctx.Identifier.map(token => token.image);
-
     return {
       type: "FieldPath",
-      path: path
+      segments: ctx.pathSegment.map(segmentCtx => this.visit(segmentCtx))
     };
+  }
+
+  pathSegment(ctx) {
+    return {
+      type: "PathSegment",
+      key: ctx.Identifier[0].image,
+      indexes: ctx.segmentIndex ? ctx.segmentIndex.map(indexCtx => this.visit(indexCtx)) : []
+    };
+  }
+
+  segmentIndex(ctx) {
+    return Number(ctx.NumberLiteral[0].image);
   }
 
   functionCall(ctx) {
@@ -342,6 +352,7 @@ const examples = [
   "select [result: (a + b) * c] from 'input.json'",
   "select [cleaned: trimLeft('http://', url), name] from 'input.json'",
   "select [cleaned: trimRight('.com', url), name] from 'input.json'",
+  "select [users[3].subscribers[0].name] from 'input.json'",
   "select total_sum: sum(a, b), total_avg: avg(c, d), e_number: count(e) from 'input.json'",
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
   "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",
@@ -355,7 +366,7 @@ examples.forEach((query, _) => {
   console.log(`Запрос: ${query}`);
   console.log("AST:");
   const ast = parseJQL(query);
-  if (!ast.hasOwnProperty('type') || ast.type !== 'Query') {
+  if (!ast || !ast.hasOwnProperty('type') || ast.type !== 'Query') {
     success = false;
   }
   console.log(JSON.stringify(ast, null, 2));

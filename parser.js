@@ -191,9 +191,22 @@ export class JQLParser extends CstParser {
             $.AT_LEAST_ONE_SEP({
                 SEP: Dot,
                 DEF: () => {
-                    $.CONSUME(Identifier);
+                    $.SUBRULE($.pathSegment);
                 }
             });
+        });
+
+        $.RULE("pathSegment", () => {
+            $.CONSUME(Identifier);
+            $.MANY(() => {
+                $.SUBRULE($.segmentIndex);
+            });
+        });
+
+        $.RULE("segmentIndex", () => {
+            $.CONSUME(LSquare);
+            $.CONSUME(NumberLiteral);
+            $.CONSUME(RSquare);
         });
 
         $.RULE("functionCall", () => {
