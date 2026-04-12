@@ -7,6 +7,14 @@ const And = createToken({ name: "And", pattern: /and/i });
 const Or = createToken({ name: "Or", pattern: /or/i });
 const AliasKeyword = createToken({ name: "AliasKeyword", pattern: /alias/i });
 const AsKeyword = createToken({ name: "AsKeyword", pattern: /as/i });
+const Left = createToken({ name: "Left", pattern: /left/i });
+const Right = createToken({ name: "Right", pattern: /right/i });
+const Inner = createToken({ name: "Inner", pattern: /inner/i });
+const Join = createToken({ name: "Join", pattern: /join/i });
+const On = createToken({ name: "On", pattern: /on/i });
+const After = createToken({ name: "After", pattern: /after/i });
+const Before = createToken({ name: "Before", pattern: /before/i });
+const Between = createToken({ name: "Between", pattern: /between/i });
 
 const LSquare = createToken({ name: "LSquare", pattern: /\[/ });
 const RSquare = createToken({ name: "RSquare", pattern: /]/ });
@@ -56,6 +64,14 @@ const allTokens = [
     Or,
     AliasKeyword,
     AsKeyword,
+    Left,
+    Right,
+    Inner,
+    Join,
+    On,
+    After,
+    Before,
+    Between,
     Sum,
     Avg,
     Count,
@@ -99,10 +115,22 @@ export class JQLParser extends CstParser {
 
         $.RULE("query", () => {
             $.SUBRULE($.selectClause);
-            $.OPTION(() => {
-                $.SUBRULE($.whereClause);
-            });
-            $.SUBRULE($.fromClause);
+            $.OR([
+                {
+                    ALT: () => {
+                        $.SUBRULE($.whereClause);
+                        $.SUBRULE($.fromClause);
+                    }
+                },
+                {
+                    ALT: () => {
+                        $.SUBRULE2($.fromClause);
+                        $.OPTION(() => {
+                            $.SUBRULE2($.whereClause);
+                        });
+                    }
+                }
+            ]);
         });
 
         $.RULE("selectClause", () => {
@@ -260,28 +288,62 @@ export class JQLParser extends CstParser {
             ]);
         });
 
-        $.RULE("fromClause", () => {
-            $.CONSUME(From);
+        $.RULE("sourceRef", () => {
             $.CONSUME(StringLiteral);
-
             $.OPTION(() => {
                 $.CONSUME(LSquare);
                 $.SUBRULE($.fieldPath, { LABEL: "sourcePath" });
                 $.CONSUME(RSquare);
             });
+        });
 
+        $.RULE("aliasMapping", () => {
+            $.SUBRULE($.fieldPath, { LABEL: "aliasSource" });
+            $.CONSUME(AsKeyword);
+            $.CONSUME(Identifier, { LABEL: "aliasName" });
+        });
+
+        $.RULE("legacyAliasSection", () => {
+            $.CONSUME(AliasKeyword);
+            $.SUBRULE($.aliasMapping);
+            $.MANY(() => {
+                $.CONSUME(Comma);
+                $.SUBRULE2($.aliasMapping);
+            });
+        });
+
+        $.RULE("joinClause", () => {
+            $.OPTION(() => {
+                $.OR([
+                    { ALT: () => $.CONSUME(Left) },
+                    { ALT: () => $.CONSUME(Right) },
+                    { ALT: () => $.CONSUME(Inner) }
+                ]);
+            });
+            $.CONSUME(Join);
+            $.SUBRULE($.sourceRef, { LABEL: "source" });
             $.OPTION2(() => {
-                $.CONSUME(AliasKeyword);
-                $.SUBRULE2($.fieldPath, { LABEL: "aliasSource" });
                 $.CONSUME(AsKeyword);
-                $.CONSUME(Identifier, { LABEL: "aliasName" });
+                $.CONSUME(Identifier, { LABEL: "joinAlias" });
+            });
+            $.CONSUME(On);
+            $.SUBRULE($.orCondition, { LABEL: "condition" });
+        });
 
-                $.MANY(() => {
-                    $.CONSUME(Comma);
-                    $.SUBRULE3($.fieldPath, { LABEL: "aliasSource" });
-                    $.CONSUME2(AsKeyword);
-                    $.CONSUME2(Identifier, { LABEL: "aliasName" });
-                });
+        $.RULE("fromClause", () => {
+            $.CONSUME(From);
+            $.SUBRULE($.sourceRef, { LABEL: "source" });
+
+            $.OPTION(() => {
+                $.CONSUME(AsKeyword);
+                $.CONSUME(Identifier, { LABEL: "sourceAlias" });
+            });
+
+            $.MANY(() => {
+                $.OR([
+                    { ALT: () => $.SUBRULE($.legacyAliasSection) },
+                    { ALT: () => $.SUBRULE($.joinClause) }
+                ]);
             });
         });
 
@@ -321,8 +383,22 @@ export class JQLParser extends CstParser {
 
         $.RULE("comparisonCondition", () => {
             $.SUBRULE($.whereOperand, { LABEL: "left" });
-            $.SUBRULE($.comparisonOperator);
-            $.SUBRULE2($.whereOperand, { LABEL: "right" });
+            $.OR([
+                {
+                    ALT: () => {
+                        $.SUBRULE($.comparisonOperator);
+                        $.SUBRULE2($.whereOperand, { LABEL: "right" });
+                    }
+                },
+                {
+                    ALT: () => {
+                        $.CONSUME(Between);
+                        $.SUBRULE3($.whereOperand, { LABEL: "lower" });
+                        $.CONSUME(And);
+                        $.SUBRULE4($.whereOperand, { LABEL: "upper" });
+                    }
+                }
+            ]);
         });
 
         $.RULE("comparisonOperator", () => {
@@ -332,7 +408,9 @@ export class JQLParser extends CstParser {
                 { ALT: () => $.CONSUME(Neq) },
                 { ALT: () => $.CONSUME(Gt) },
                 { ALT: () => $.CONSUME(Lt) },
-                { ALT: () => $.CONSUME(Eq) }
+                { ALT: () => $.CONSUME(Eq) },
+                { ALT: () => $.CONSUME(After) },
+                { ALT: () => $.CONSUME(Before) }
             ]);
         });
 

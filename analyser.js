@@ -254,24 +254,83 @@ class JQLToAstVisitor extends BaseCstVisitor {
     }
   }
 
-  fromClause(ctx) {
+  sourceRef(ctx) {
     const filePath = ctx.StringLiteral[0].image;
-    // Убираем кавычки
     const cleanPath = filePath.substring(1, filePath.length - 1);
-    const sourcePath = ctx.sourcePath ? this.visit(ctx.sourcePath[0]) : null;
 
-    if (ctx.aliasSource && ctx.aliasName) {
-      for (let i = 0; i < ctx.aliasSource.length; i++) {
-        const aliasName = ctx.aliasName[i].image;
-        const aliasSourcePath = this.visit(ctx.aliasSource[i]);
-        this.aliasMap.set(aliasName, aliasSourcePath);
-      }
+    return {
+      type: "SourceRef",
+      file: cleanPath,
+      sourcePath: ctx.sourcePath ? this.visit(ctx.sourcePath[0]) : null
+    };
+  }
+
+  aliasMapping(ctx) {
+    return {
+      alias: ctx.aliasName[0].image,
+      path: this.visit(ctx.aliasSource[0])
+    };
+  }
+
+  legacyAliasSection(ctx) {
+    const aliases = ctx.aliasMapping ? ctx.aliasMapping.map(aliasCtx => this.visit(aliasCtx)) : [];
+
+    return {
+      type: "LegacyAliasSection",
+      aliases: aliases
+    };
+  }
+
+  joinClause(ctx) {
+    const source = this.visit(ctx.source[0]);
+    const joinType = ctx.Left ? "left" : ctx.Right ? "right" : ctx.Inner ? "inner" : "inner";
+    const alias = ctx.joinAlias ? ctx.joinAlias[0].image : null;
+
+    if (alias) {
+      const aliasTarget = source.sourcePath || { type: "FieldPath", segments: [] };
+      this.aliasMap.set(alias, aliasTarget);
     }
 
     return {
+      type: "JoinClause",
+      joinType: joinType,
+      file: source.file,
+      sourcePath: source.sourcePath,
+      alias: alias,
+      condition: this.visit(ctx.condition)
+    };
+  }
+
+  fromClause(ctx) {
+    const source = this.visit(ctx.source[0]);
+    const sourceAlias = ctx.sourceAlias ? ctx.sourceAlias[0].image : null;
+
+    if (sourceAlias) {
+      const aliasTarget = source.sourcePath || { type: "FieldPath", segments: [] };
+      this.aliasMap.set(sourceAlias, aliasTarget);
+    }
+
+    const aliases = [];
+    if (ctx.legacyAliasSection) {
+      for (const aliasSectionCtx of ctx.legacyAliasSection) {
+        const aliasSection = this.visit(aliasSectionCtx);
+        aliases.push(...aliasSection.aliases);
+
+        for (const alias of aliasSection.aliases) {
+          this.aliasMap.set(alias.alias, alias.path);
+        }
+      }
+    }
+
+    const joins = ctx.joinClause ? ctx.joinClause.map(joinCtx => this.visit(joinCtx)) : [];
+
+    return {
       type: "FromClause",
-      file: cleanPath,
-      sourcePath: sourcePath
+      file: source.file,
+      sourcePath: source.sourcePath,
+      alias: sourceAlias,
+      aliases: aliases,
+      joins: joins
     };
   }
 
@@ -325,11 +384,20 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   comparisonCondition(ctx) {
+    if (ctx.Between) {
+      return {
+        type: "BetweenExpression",
+        value: this.visit(ctx.left[0]),
+        lower: this.visit(ctx.lower[0]),
+        upper: this.visit(ctx.upper[0])
+      };
+    }
+
     return {
       type: "ComparisonExpression",
       operator: this.visit(ctx.comparisonOperator),
-      left: this.visit(ctx.left),
-      right: this.visit(ctx.right)
+      left: this.visit(ctx.left[0]),
+      right: this.visit(ctx.right[0])
     };
   }
 
@@ -339,6 +407,8 @@ class JQLToAstVisitor extends BaseCstVisitor {
     if (ctx.Neq) return "!=";
     if (ctx.Gt) return ">";
     if (ctx.Lt) return "<";
+    if (ctx.After) return "after";
+    if (ctx.Before) return "before";
     return "=";
   }
 
@@ -385,9 +455,7 @@ function parseJQL(inputText) {
 
   // Преобразование CST в AST
   const astVisitor = new JQLToAstVisitor();
-  const ast = astVisitor.visit(cst);
-
-  return ast;
+  return astVisitor.visit(cst);
 }
 
 
@@ -409,7 +477,15 @@ const examples = [
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
   "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",
   "select sum_a: sum(a) where c != 4 from 'input.json'",
-  "select s: sum(a * avg(b, c)) from 'input.json'"
+  "select s: sum(a * avg(b, c)) from 'input.json'",
+  "select [students.name, faculties.name] from 'input.json'[students] as students left join 'input.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [students.name, faculties.name] from 'input.json'[students] as students right join 'input.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [students.name, faculties.name, teachers.name] from 'students.json' as students inner join 'faculties.json' as faculties on students.facultyID = faculties.ID inner join 'teachers.json' as teachers on students.teacherID = teachers.ID",
+  "select [students.name, faculties.name] from 'input1.json'[students] as students join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [birthday] from 'input.json' where birthday after '2015-03-25T12:00:00Z'",
+  "select [birthday] from 'input.json' where birthday before 1549312452",
+  "select [birthday] from 'input.json' where birthday between startDate and endDate",
+  "select [birthday] from 'input.json' where birthday between 'Jan 25 2015' and '03/16/2015'"
 ];
 
 let success = true;
