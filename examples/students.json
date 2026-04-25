@@ -1,0 +1,26 @@
+[
+  {
+    "ID": 10,
+    "name": "Alice Kim",
+    "facultyID": 1,
+    "teacherID": 100
+  },
+  {
+    "ID": 11,
+    "name": "Boris Sidorov",
+    "facultyID": 2,
+    "teacherID": 101
+  },
+  {
+    "ID": 12,
+    "name": "Carla Mendes",
+    "facultyID": 1,
+    "teacherID": 100
+  },
+  {
+    "ID": 13,
+    "name": "Dmitry Egorov",
+    "facultyID": 2,
+    "teacherID": 101
+  }
+]

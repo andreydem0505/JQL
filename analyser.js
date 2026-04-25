@@ -1,4 +1,5 @@
 import {JQLParser, JQLLexer} from "./parser.js";
+import { fileURLToPath } from "node:url";
 
 const parserInstance = new JQLParser();
 
@@ -283,7 +284,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
 
   joinClause(ctx) {
     const source = this.visit(ctx.source[0]);
-    const joinType = ctx.Left ? "left" : ctx.Right ? "right" : ctx.Inner ? "inner" : "inner";
+    const joinType = ctx.Left ? "left" : ctx.Right ? "right" : ctx.Inner ? "inner" : "outer";
     const alias = ctx.joinAlias ? ctx.joinAlias[0].image : null;
 
     if (alias) {
@@ -433,7 +434,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
 }
 
 
-function parseJQL(inputText) {
+export function parseJQL(inputText) {
   // Лексический анализ
   const lexingResult = JQLLexer.tokenize(inputText);
 
@@ -459,46 +460,48 @@ function parseJQL(inputText) {
 }
 
 
-const examples = [
-  "select [age, name] from 'input.json'",
+export const examples = [
+  "select [id, name, department] from 'input.json'",
   "select [имя_пользователя, возраст] from 'input.json'",
-  "select -[age, name] from 'input.json'",
-  "select [settings.theme.color, name] from 'input.json'",
-  "select [new_age_key: age, new_name_key: name, profile] from 'input.json'",
-  "select [s: sum(a, b, c), average: avg(a, b)] from 'input.json'",
-  "select [s: a + b + c] from 'input.json'[result.success]",
-  "select [d: a - b] from 'input.json'",
-  "select [m: a * b] from 'input.json'",
-  "select [d: a / b] from 'input.json'",
-  "select [result: (a + b) * c] from 'input.json'",
-  "select [trimedLeft: trimLeft('http://', url), trimedRight: trimRight('.com', url)] from 'input.json'",
-  "select [subscribers_number: length($user.subscribers), name_length: length($user.$name)] from 'input.json' alias users[3] as user, profile.name as name",
-  "select total_sum: sum(a, b), total_avg: avg(c, d), e_number: count(e) from 'input.json'",
+  "select -[email, url] from 'input.json'",
+  "select [settings.theme.color, profile.website] from 'input.json'",
+  "select [employee_name: name, team_name: profile.team, profile] from 'input.json'",
+  "select [total_score: sum(qualityScore, effortScore, impactScore), average_score: avg(qualityScore, effortScore)] from 'input.json'[result.success]",
+  "select [delta: qualityScore - effortScore, ratio: qualityScore / effortScore, weighted: (qualityScore + effortScore) * impactScore] from 'input.json'[result.success]",
+  "select [clean_url: trimLeft('https://', url), short_domain: trimRight('.com', url)] from 'input.json'",
+  "select [subscribers_number: length($group.subscribers), owner_name_length: length($group.$ownerName)] from 'input.json' alias users[3] as group, profile.name as ownerName",
+  "select [third_subscriber_name: users[3].subscribers[0].name] from 'input.json'",
+  "select [result_score: qualityScore + effortScore + impactScore] from 'input.json'[result.success]",
+  "select total_sum: sum(qualityScore, effortScore), total_avg_score: avg(qualityScore, impactScore), total_count: count(impactScore) from 'input.json'[result.success]",
   "select max_salary: max(salary), min_salary: min(salary) from 'input.json'",
-  "select [a, b] where a > 5 and (b < 10 or d = 'value') from 'input.json'",
-  "select sum_a: sum(a) where c != 4 from 'input.json'",
-  "select s: sum(a * avg(b, c)) from 'input.json'",
-  "select [students.name, faculties.name] from 'input.json'[students] as students left join 'input.json'[faculties] as faculties on students.facultyID = faculties.ID",
-  "select [students.name, faculties.name] from 'input.json'[students] as students right join 'input.json'[faculties] as faculties on students.facultyID = faculties.ID",
-  "select [students.name, faculties.name, teachers.name] from 'students.json' as students inner join 'faculties.json' as faculties on students.facultyID = faculties.ID inner join 'teachers.json' as teachers on students.teacherID = teachers.ID",
-  "select [students.name, faculties.name] from 'input1.json'[students] as students join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select quality_sum: sum(qualityScore) where impactScore != 4 from 'input.json'[result.success]",
+  "select weighted_total: sum(qualityScore * avg(effortScore, impactScore)) from 'input.json'[result.success]",
+  "select [qualityScore, effortScore, impactScore] from 'input.json'[result.success] where qualityScore > 5 and (effortScore < 10 or impactScore = 5)",
   "select [birthday] from 'input.json' where birthday after '2015-03-25T12:00:00Z'",
   "select [birthday] from 'input.json' where birthday before 1549312452",
-  "select [birthday] from 'input.json' where birthday between startDate and endDate",
-  "select [birthday] from 'input.json' where birthday between 'Jan 25 2015' and '03/16/2015'"
+  "select [birthday] from 'input.json' where birthday between contractStartDate and contractEndDate",
+  "select [birthday] from 'input.json' where birthday between 'Jan 25 2015' and '03/16/2015'",
+  "select [students.name, faculties.name] from 'input1.json'[students] as students left join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [students.name, faculties.name] from 'input1.json'[students] as students right join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [students.name, faculties.name, teachers.name] from 'students.json' as students inner join 'faculties.json' as faculties on students.facultyID = faculties.ID inner join 'teachers.json' as teachers on students.teacherID = teachers.ID",
+  "select [students.name, faculties.name] from 'input1.json'[students] as students join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID"
 ];
 
-let success = true;
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 
-examples.forEach((query, _) => {
-  console.log(`Запрос: ${query}`);
-  console.log("AST:");
-  const ast = parseJQL(query);
-  if (!ast || !ast.hasOwnProperty('type') || ast.type !== 'Query') {
-    success = false;
-  }
-  console.log(JSON.stringify(ast, null, 2));
-  console.log("\n" + "=".repeat(50) + "\n");
-});
+if (isMain) {
+  let success = true;
 
-console.log(success ? "Все запросы успешно распарсены!" : "Некоторые запросы не были распарсены.");
+  examples.forEach((query, _) => {
+    console.log(`Запрос: ${query}`);
+    console.log("AST:");
+    const ast = parseJQL(query);
+    if (!ast || !ast.hasOwnProperty('type') || ast.type !== 'Query') {
+      success = false;
+    }
+    console.log(JSON.stringify(ast, null, 2));
+    console.log("\n" + "=".repeat(50) + "\n");
+  });
+
+  console.log(success ? "Все запросы успешно распарсены!" : "Некоторые запросы не были распарсены.");
+}

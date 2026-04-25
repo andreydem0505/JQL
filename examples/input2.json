@@ -1,0 +1,12 @@
+{
+  "faculties": [
+    {
+      "ID": 2,
+      "name": "Design"
+    },
+    {
+      "ID": 3,
+      "name": "Mathematics"
+    }
+  ]
+}

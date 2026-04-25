@@ -1,0 +1,365 @@
+[
+  {
+    "id": 101,
+    "name": "Anna Petrova",
+    "age": 29,
+    "имя_пользователя": "anna_p",
+    "возраст": 29,
+    "email": "anna.petrova@acme.io",
+    "url": "https://anna-portfolio.com",
+    "department": "Analytics",
+    "profile": {
+      "bio": "Senior data analyst",
+      "name": "Anna P.",
+      "team": "Insights",
+      "website": "https://anna-portfolio.com"
+    },
+    "settings": {
+      "name": "default",
+      "theme": {
+        "color": "dark",
+        "fontSize": 14
+      },
+      "notifications": true
+    },
+    "reviewStatus": "ok",
+    "recordFlag": 1,
+    "salary": 4200,
+    "birthday": "2016-07-12T09:30:00Z",
+    "contractStartDate": "2015-01-01T00:00:00Z",
+    "contractEndDate": "2018-01-01T00:00:00Z",
+    "result": {
+      "success": {
+        "qualityScore": 2,
+        "effortScore": 3,
+        "impactScore": 5
+      }
+    },
+    "users": [
+      {
+        "name": "community_alpha",
+        "subscribers": [
+          {
+            "name": "Ilya"
+          }
+        ],
+        "settings": {
+          "name": "alpha-config"
+        },
+        "profile": {
+          "name": "Alpha Hub"
+        }
+      },
+      {
+        "name": "community_beta",
+        "subscribers": [
+          {
+            "name": "Olga"
+          },
+          {
+            "name": "Pavel"
+          }
+        ],
+        "settings": {
+          "name": "beta-config"
+        },
+        "profile": {
+          "name": "Beta Hub"
+        }
+      },
+      {
+        "name": "community_gamma",
+        "subscribers": [],
+        "settings": {
+          "name": "gamma-config"
+        },
+        "profile": {
+          "name": "Gamma Hub"
+        }
+      },
+      {
+        "name": "community_delta",
+        "subscribers": [
+          {
+            "name": "Denis"
+          },
+          {
+            "name": "Marina"
+          },
+          {
+            "name": "Artem"
+          }
+        ],
+        "settings": {
+          "name": "delta-config"
+        },
+        "profile": {
+          "name": "Delta Hub"
+        }
+      },
+      {
+        "name": "community_epsilon",
+        "subscribers": [
+          {
+            "name": "Kirill"
+          }
+        ],
+        "settings": {
+          "name": "epsilon-config"
+        },
+        "profile": {
+          "name": "Epsilon Hub"
+        }
+      },
+      {
+        "name": "community_zeta",
+        "subscribers": [],
+        "settings": {
+          "name": "zeta-config"
+        },
+        "profile": {
+          "name": "Zeta Hub"
+        }
+      }
+    ]
+  },
+  {
+    "id": 102,
+    "name": "Max Ivanov",
+    "age": 34,
+    "имя_пользователя": "max_i",
+    "возраст": 34,
+    "email": "max.ivanov@acme.io",
+    "url": "https://max-ivanov.com",
+    "department": "Engineering",
+    "profile": {
+      "bio": "Backend engineer",
+      "name": "Max I.",
+      "team": "Platform",
+      "website": "https://max-ivanov.com"
+    },
+    "settings": {
+      "name": "high-contrast",
+      "theme": {
+        "color": "light",
+        "fontSize": 16
+      },
+      "notifications": false
+    },
+    "reviewStatus": "hold",
+    "recordFlag": 1,
+    "salary": 5100,
+    "birthday": 1549312000,
+    "contractStartDate": "2014-01-01T00:00:00Z",
+    "contractEndDate": "2020-12-31T23:59:59Z",
+    "result": {
+      "success": {
+        "qualityScore": 7,
+        "effortScore": 1,
+        "impactScore": 4
+      }
+    },
+    "users": [
+      {
+        "name": "team_red",
+        "subscribers": [],
+        "settings": {
+          "name": "red-config"
+        },
+        "profile": {
+          "name": "Red Team"
+        }
+      },
+      {
+        "name": "team_blue",
+        "subscribers": [
+          {
+            "name": "Elena"
+          }
+        ],
+        "settings": {
+          "name": "blue-config"
+        },
+        "profile": {
+          "name": "Blue Team"
+        }
+      },
+      {
+        "name": "team_green",
+        "subscribers": [
+          {
+            "name": "Vadim"
+          }
+        ],
+        "settings": {
+          "name": "green-config"
+        },
+        "profile": {
+          "name": "Green Team"
+        }
+      },
+      {
+        "name": "team_black",
+        "subscribers": [
+          {
+            "name": "Sofia"
+          }
+        ],
+        "settings": {
+          "name": "black-config"
+        },
+        "profile": {
+          "name": "Black Team"
+        }
+      },
+      {
+        "name": "team_white",
+        "subscribers": [
+          {
+            "name": "Roman"
+          },
+          {
+            "name": "Alina"
+          }
+        ],
+        "settings": {
+          "name": "white-config"
+        },
+        "profile": {
+          "name": "White Team"
+        }
+      },
+      {
+        "name": "team_gold",
+        "subscribers": [],
+        "settings": {
+          "name": "gold-config"
+        },
+        "profile": {
+          "name": "Gold Team"
+        }
+      }
+    ]
+  },
+  {
+    "id": 103,
+    "name": "Lena Smirnova",
+    "age": 26,
+    "имя_пользователя": "lena_s",
+    "возраст": 26,
+    "email": "lena.smirnova@acme.io",
+    "url": "https://lena-smirnova.org",
+    "department": "Marketing",
+    "profile": {
+      "bio": "Content strategist",
+      "name": "Lena S.",
+      "team": "Growth",
+      "website": "https://lena-smirnova.org"
+    },
+    "settings": {
+      "name": "compact",
+      "theme": {
+        "color": "dark",
+        "fontSize": 13
+      },
+      "notifications": true
+    },
+    "reviewStatus": "ok",
+    "recordFlag": 1,
+    "salary": 3900,
+    "birthday": "2014-03-10T11:20:00Z",
+    "contractStartDate": "2013-01-01T00:00:00Z",
+    "contractEndDate": "2016-12-31T23:59:59Z",
+    "result": {
+      "success": {
+        "qualityScore": 9,
+        "effortScore": 9,
+        "impactScore": 9
+      }
+    },
+    "users": [
+      {
+        "name": "channel_one",
+        "subscribers": [
+          {
+            "name": "Nora"
+          }
+        ],
+        "settings": {
+          "name": "one-config"
+        },
+        "profile": {
+          "name": "Channel One"
+        }
+      },
+      {
+        "name": "channel_two",
+        "subscribers": [
+          {
+            "name": "Rita"
+          },
+          {
+            "name": "Maksim"
+          }
+        ],
+        "settings": {
+          "name": "two-config"
+        },
+        "profile": {
+          "name": "Channel Two"
+        }
+      },
+      {
+        "name": "channel_three",
+        "subscribers": [],
+        "settings": {
+          "name": "three-config"
+        },
+        "profile": {
+          "name": "Channel Three"
+        }
+      },
+      {
+        "name": "channel_four",
+        "subscribers": [
+          {
+            "name": "Igor"
+          },
+          {
+            "name": "Marta"
+          }
+        ],
+        "settings": {
+          "name": "four-config"
+        },
+        "profile": {
+          "name": "Channel Four"
+        }
+      },
+      {
+        "name": "channel_five",
+        "subscribers": [
+          {
+            "name": "Sergey"
+          }
+        ],
+        "settings": {
+          "name": "five-config"
+        },
+        "profile": {
+          "name": "Channel Five"
+        }
+      },
+      {
+        "name": "channel_six",
+        "subscribers": [],
+        "settings": {
+          "name": "six-config"
+        },
+        "profile": {
+          "name": "Channel Six"
+        }
+      }
+    ]
+  }
+]
