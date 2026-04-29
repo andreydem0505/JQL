@@ -6,10 +6,15 @@ import { parseJQL, examples } from "./analyser.js";
 
 const AGGREGATE_FUNCTIONS = new Set(["sum", "avg", "count", "max", "min"]);
 const SCALAR_FUNCTIONS = new Set(["length", "trimLeft", "trimRight"]);
-const resolvedFileCache = new Map();
+
 const jsonCache = new Map();
 const sourceRowsCache = new Map();
 const pathStepsCache = new Map();
+
+const LARGE_TIMESTAMP_THRESHOLD = 1e12;
+const NUMERIC_PATTERN = /^-?\d+(?:\.\d+)?$/;
+const DATE_PATTERN = /[-/:TZ ]|[A-Za-z]/;
+
 
 function cloneValue(value) {
   if (value === null || value === undefined) {
@@ -33,12 +38,6 @@ async function fileExists(filePath) {
 }
 
 async function resolveDataFile(fileName, baseDir) {
-  const cacheKey = `${baseDir}::${fileName}`;
-  const cached = resolvedFileCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
   const candidates = [
     path.resolve(baseDir, "examples", fileName),
     path.resolve(baseDir, fileName)
@@ -46,7 +45,6 @@ async function resolveDataFile(fileName, baseDir) {
 
   for (const candidate of candidates) {
     if (await fileExists(candidate)) {
-      resolvedFileCache.set(cacheKey, candidate);
       return candidate;
     }
   }
@@ -193,25 +191,50 @@ function deleteBySteps(target, steps) {
   }
 }
 
+function parseDate(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 function normalizeComparable(value) {
   if (value === null || value === undefined) {
     return value;
   }
 
   if (typeof value === "number") {
-    return Math.abs(value) < 1e12 ? value * 1000 : value;
+    return Math.abs(value) < LARGE_TIMESTAMP_THRESHOLD ? value * 1000 : value;
   }
 
   if (typeof value === "string") {
     const trimmed = value.trim();
 
-    if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    if (NUMERIC_PATTERN.test(trimmed)) {
       const numeric = Number(trimmed);
-      return Math.abs(numeric) < 1e12 ? numeric * 1000 : numeric;
+      return Math.abs(numeric) < LARGE_TIMESTAMP_THRESHOLD ? numeric * 1000 : numeric;
     }
 
     const parsed = Date.parse(trimmed);
-    if (!Number.isNaN(parsed) && /[-/:TZ ]|[A-Za-z]/.test(trimmed)) {
+    if (!Number.isNaN(parsed) && DATE_PATTERN.test(trimmed)) {
       return parsed;
     }
 
@@ -222,6 +245,17 @@ function normalizeComparable(value) {
 }
 
 function compareValues(left, right, operator) {
+  if (operator === "after" || operator === "before") {
+    const leftDate = parseDate(left);
+    const rightDate = parseDate(right);
+
+    if (leftDate === null || rightDate === null) {
+      return false;
+    }
+
+    return operator === "after" ? leftDate > rightDate : leftDate < rightDate;
+  }
+
   const normalizedLeft = normalizeComparable(left);
   const normalizedRight = normalizeComparable(right);
 
@@ -237,14 +271,14 @@ function compareValues(left, right, operator) {
     return false;
   }
 
-  if (operator === ">") return normalizedLeft > normalizedRight;
-  if (operator === "<") return normalizedLeft < normalizedRight;
-  if (operator === ">=") return normalizedLeft >= normalizedRight;
-  if (operator === "<=") return normalizedLeft <= normalizedRight;
-  if (operator === "after") return normalizedLeft > normalizedRight;
-  if (operator === "before") return normalizedLeft < normalizedRight;
+  const comparisons = {
+    ">": normalizedLeft > normalizedRight,
+    "<": normalizedLeft < normalizedRight,
+    ">=": normalizedLeft >= normalizedRight,
+    "<=": normalizedLeft <= normalizedRight
+  };
 
-  return false;
+  return comparisons[operator] ?? false;
 }
 
 function makeRowContext(base, aliases = {}) {
@@ -299,12 +333,32 @@ function evaluateBinaryExpression(node, rowCtx, scope) {
     topLevelAggregate: false
   });
 
-  if (node.operator === "+") return Number(left) + Number(right);
-  if (node.operator === "-") return Number(left) - Number(right);
-  if (node.operator === "*") return Number(left) * Number(right);
-  if (node.operator === "/") return Number(left) / Number(right);
+  const BINARY_OPERATORS = {
+    "+": (l, r) => Number(l) + Number(r),
+    "-": (l, r) => Number(l) - Number(r),
+    "*": (l, r) => Number(l) * Number(r),
+    "/": (l, r) => Number(l) / Number(r)
+  };
 
-  return undefined;
+  const operator = BINARY_OPERATORS[node.operator];
+  return operator ? operator(left, right) : undefined;
+}
+
+function computeAggregateFunction(functionName, numericValues, definedValues) {
+  switch (functionName) {
+    case "count":
+      return definedValues.length;
+    case "sum":
+      return numericValues.reduce((acc, value) => acc + value, 0);
+    case "avg":
+      return numericValues.length ? numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length : 0;
+    case "max":
+      return numericValues.length ? Math.max(...numericValues) : undefined;
+    case "min":
+      return numericValues.length ? Math.min(...numericValues) : undefined;
+    default:
+      return undefined;
+  }
 }
 
 function evaluateAggregateAcrossRows(functionName, argumentNodes, rowContexts, scope) {
@@ -320,75 +374,47 @@ function evaluateAggregateAcrossRows(functionName, argumentNodes, rowContexts, s
   }
 
   const definedValues = values.filter(value => value !== null && value !== undefined);
-
-  if (functionName === "count") {
-    return definedValues.length;
-  }
-
   const numericValues = definedValues.map(Number).filter(value => !Number.isNaN(value));
 
-  if (functionName === "sum") {
-    return numericValues.reduce((acc, value) => acc + value, 0);
-  }
-
-  if (functionName === "avg") {
-    if (!numericValues.length) {
-      return 0;
-    }
-
-    return numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length;
-  }
-
-  if (functionName === "max") {
-    return numericValues.length ? Math.max(...numericValues) : undefined;
-  }
-
-  if (functionName === "min") {
-    return numericValues.length ? Math.min(...numericValues) : undefined;
-  }
-
-  return undefined;
+  return computeAggregateFunction(functionName, numericValues, definedValues);
 }
 
 function evaluateScalarFunction(functionName, argumentNodes, rowCtx, scope) {
   const evaluatedArgs = argumentNodes.map(arg => evaluateNode(arg, rowCtx, scope));
 
-  if (functionName === "length") {
-    const value = evaluatedArgs[0];
-    if (typeof value === "string" || Array.isArray(value)) {
-      return value.length;
+  switch (functionName) {
+    case "length": {
+      const value = evaluatedArgs[0];
+      return (typeof value === "string" || Array.isArray(value)) ? value.length : 0;
     }
 
-    return 0;
+    case "trimLeft": {
+      const [pattern, value] = evaluatedArgs;
+      if (typeof value !== "string" || typeof pattern !== "string" || !pattern.length) {
+        return value;
+      }
+      let result = value;
+      while (result.startsWith(pattern)) {
+        result = result.slice(pattern.length);
+      }
+      return result;
+    }
+
+    case "trimRight": {
+      const [pattern, value] = evaluatedArgs;
+      if (typeof value !== "string" || typeof pattern !== "string" || !pattern.length) {
+        return value;
+      }
+      let result = value;
+      while (result.endsWith(pattern)) {
+        result = result.slice(0, result.length - pattern.length);
+      }
+      return result;
+    }
+
+    default:
+      return undefined;
   }
-
-  if (functionName === "trimLeft") {
-    const [pattern, value] = evaluatedArgs;
-    if (typeof value !== "string" || typeof pattern !== "string" || !pattern.length) {
-      return value;
-    }
-
-    let result = value;
-    while (result.startsWith(pattern)) {
-      result = result.slice(pattern.length);
-    }
-    return result;
-  }
-
-  if (functionName === "trimRight") {
-    const [pattern, value] = evaluatedArgs;
-    if (typeof value !== "string" || typeof pattern !== "string" || !pattern.length) {
-      return value;
-    }
-
-    let result = value;
-    while (result.endsWith(pattern)) {
-      result = result.slice(0, result.length - pattern.length);
-    }
-    return result;
-  }
-
-  return undefined;
 }
 
 function evaluateFunctionCall(node, rowCtx, scope) {
@@ -407,32 +433,10 @@ function evaluateFunctionCall(node, rowCtx, scope) {
       selectMode: "row",
       topLevelAggregate: false
     }));
-    const defined = evaluatedArgs.filter(value => value !== null && value !== undefined);
+    const definedValues = evaluatedArgs.filter(value => value !== null && value !== undefined);
+    const numericValues = definedValues.map(Number).filter(value => !Number.isNaN(value));
 
-    if (functionName === "count") {
-      return defined.length;
-    }
-
-    const numericValues = defined.map(Number).filter(value => !Number.isNaN(value));
-
-    if (functionName === "sum") {
-      return numericValues.reduce((acc, value) => acc + value, 0);
-    }
-
-    if (functionName === "avg") {
-      if (!numericValues.length) {
-        return 0;
-      }
-      return numericValues.reduce((acc, value) => acc + value, 0) / numericValues.length;
-    }
-
-    if (functionName === "max") {
-      return numericValues.length ? Math.max(...numericValues) : undefined;
-    }
-
-    if (functionName === "min") {
-      return numericValues.length ? Math.min(...numericValues) : undefined;
-    }
+    return computeAggregateFunction(functionName, numericValues, definedValues);
   }
 
   if (SCALAR_FUNCTIONS.has(functionName)) {
@@ -480,11 +484,14 @@ function evaluateCondition(node, rowCtx, scope) {
   }
 
   if (node.type === "LogicalExpression") {
-    if (node.operator === "and") {
-      return evaluateCondition(node.left, rowCtx, scope) && evaluateCondition(node.right, rowCtx, scope);
-    }
+    const operator = node.operator;
+    const left = evaluateCondition(node.left, rowCtx, scope);
 
-    return evaluateCondition(node.left, rowCtx, scope) || evaluateCondition(node.right, rowCtx, scope);
+    if (operator === "and" && !left) return false;
+    if (operator === "or" && left) return true;
+
+    const right = evaluateCondition(node.right, rowCtx, scope);
+    return operator === "and" ? left && right : left || right;
   }
 
   if (node.type === "ComparisonExpression") {
@@ -497,6 +504,15 @@ function evaluateCondition(node, rowCtx, scope) {
     const value = evaluateNode(node.value, rowCtx, scope);
     const lower = evaluateNode(node.lower, rowCtx, scope);
     const upper = evaluateNode(node.upper, rowCtx, scope);
+
+    const valueDate = parseDate(value);
+    const lowerDate = parseDate(lower);
+    const upperDate = parseDate(upper);
+
+    if (valueDate !== null && lowerDate !== null && upperDate !== null) {
+      return valueDate >= lowerDate && valueDate <= upperDate;
+    }
+
     return compareValues(value, lower, ">=") && compareValues(value, upper, "<=");
   }
 
@@ -516,18 +532,11 @@ async function loadSourceRows(sourceRef, baseDir) {
 
   const raw = jsonRecord.data;
   const sourceSteps = toPathSteps(sourceRef.sourcePath?.segments || []);
-  let rows;
 
-  if (Array.isArray(raw)) {
-    rows = raw.map(item => {
-      const resolved = sourceSteps.length ? readBySteps(item, sourceSteps) : item;
-      return makeRowContext(resolved);
-    });
-  } else {
-    const resolved = sourceSteps.length ? readBySteps(raw, sourceSteps) : raw;
-    const resolvedRows = Array.isArray(resolved) ? resolved : [resolved];
-    rows = resolvedRows.map(item => makeRowContext(item));
-  }
+  const sourceData = sourceSteps.length ? readBySteps(raw, sourceSteps) : raw;
+  const itemsArray = Array.isArray(sourceData) ? sourceData : [sourceData];
+
+  const rows = itemsArray.map(item => makeRowContext(item));
 
   sourceRowsCache.set(cacheKey, rows);
   return rows;
@@ -555,41 +564,44 @@ function combineRowContexts(leftRow, rightRow, joinAlias) {
 }
 
 async function applyJoinClause(rowContexts, joinClause, baseDir) {
-  const rightRows = await loadSourceRows({ file: joinClause.file, sourcePath: joinClause.sourcePath }, baseDir);
+  const rightRows = await loadSourceRows(
+    { file: joinClause.file, sourcePath: joinClause.sourcePath },
+    baseDir
+  );
   const aliasedRightRows = bindAlias(rightRows, joinClause.alias);
   const joinType = joinClause.joinType || "outer";
+
   const results = [];
   const matchedRightIndexes = new Set();
-  const matchedLeftIndexes = new Set();
 
   for (let leftIndex = 0; leftIndex < rowContexts.length; leftIndex++) {
     const leftRow = rowContexts[leftIndex];
-    let matched = false;
+    let hasMatch = false;
 
     for (let rightIndex = 0; rightIndex < aliasedRightRows.length; rightIndex++) {
       const rightRow = aliasedRightRows[rightIndex];
       const combined = combineRowContexts(leftRow, rightRow, joinClause.alias);
+
       if (evaluateCondition(joinClause.condition, combined, { selectMode: "list", rowContexts })) {
-        matched = true;
-        matchedLeftIndexes.add(leftIndex);
+        hasMatch = true;
         matchedRightIndexes.add(rightIndex);
         results.push(combined);
       }
     }
 
-    if (!matched && (joinType === "left" || joinType === "outer")) {
+    if (!hasMatch && (joinType === "left" || joinType === "outer")) {
       const nullAliases = joinClause.alias ? { [joinClause.alias]: null } : {};
       results.push(makeRowContext(leftRow.base, { ...leftRow.aliases, ...nullAliases }));
     }
   }
 
   if (joinType === "right" || joinType === "outer") {
-    for (let i = 0; i < aliasedRightRows.length; i++) {
-      if (matchedRightIndexes.has(i)) {
+    for (let rightIndex = 0; rightIndex < aliasedRightRows.length; rightIndex++) {
+      if (matchedRightIndexes.has(rightIndex)) {
         continue;
       }
 
-      const rightRow = aliasedRightRows[i];
+      const rightRow = aliasedRightRows[rightIndex];
       const aliases = { ...rightRow.aliases };
       if (joinClause.alias) {
         aliases[joinClause.alias] = rightRow.base;
@@ -609,10 +621,14 @@ function projectSelectedFields(rowCtx, fieldList) {
     }
 
     for (const field of fieldList.fields) {
-      if (field.type === "FieldPath") {
-        deleteBySteps(result, toPathSteps(field.segments));
-      } else if (field.type === "FieldWithAlias" && field.value?.type === "FieldPath") {
-        deleteBySteps(result, toPathSteps(field.value.segments));
+      const steps = field.type === "FieldPath"
+        ? toPathSteps(field.segments)
+        : field.type === "FieldWithAlias" && field.value?.type === "FieldPath"
+        ? toPathSteps(field.value.segments)
+        : [];
+
+      if (steps.length) {
+        deleteBySteps(result, steps);
       }
     }
 
@@ -620,20 +636,21 @@ function projectSelectedFields(rowCtx, fieldList) {
   }
 
   const result = {};
+  const scope = { selectMode: "list", rowContexts: [rowCtx] };
 
   fieldList.fields.forEach((field, index) => {
     if (field.type === "FieldWithAlias") {
-      result[field.alias] = evaluateNode(field.value, rowCtx, { selectMode: "list", rowContexts: [rowCtx] });
+      result[field.alias] = evaluateNode(field.value, rowCtx, scope);
       return;
     }
 
     if (field.type === "FieldPath") {
-      const value = evaluateNode(field, rowCtx, { selectMode: "list", rowContexts: [rowCtx] });
-      writeBySteps(result, field.segments ? toPathSteps(field.segments) : [], value);
+      const value = evaluateNode(field, rowCtx, scope);
+      writeBySteps(result, toPathSteps(field.segments || []), value);
       return;
     }
 
-    result[`value_${index + 1}`] = evaluateNode(field, rowCtx, { selectMode: "list", rowContexts: [rowCtx] });
+    result[`value_${index + 1}`] = evaluateNode(field, rowCtx, scope);
   });
 
   return result;
@@ -677,7 +694,6 @@ export class JQLCompiler {
     rowContexts = bindAlias(rowContexts, source.alias);
 
     for (const aliasSection of source.aliases || []) {
-      // legacy alias mapping only influences the parser, runtime already sees full paths
       void aliasSection;
     }
 
