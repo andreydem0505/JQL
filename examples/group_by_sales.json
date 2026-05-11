@@ -1,11 +1,13 @@
 [
-  {"country": "Kazakhstan", "city": "Almaty", "amount": 120, "channel": "web"},
-  {"country": "Kazakhstan", "city": "Astana", "amount": 90, "channel": "mobile"},
-  {"country": "Kazakhstan", "city": "Almaty", "amount": 180, "channel": "web"},
-  {"country": "Russia", "city": "Moscow", "amount": 210, "channel": "web"},
-  {"country": "Russia", "city": "Kazan", "amount": 75, "channel": "mobile"},
-  {"country": "Russia", "city": "Moscow", "amount": 150, "channel": "partner"},
-  {"country": "Uzbekistan", "city": "Tashkent", "amount": 60, "channel": "web"},
-  {"country": "Uzbekistan", "city": "Samarkand", "amount": 110, "channel": "mobile"}
+  {"id": 1, "country": "Kazakhstan", "city": "Almaty", "amount": 120, "channel": "web"},
+  {"id": 2, "country": "Kazakhstan", "city": "Astana", "amount": 90, "channel": "mobile"},
+  {"id": 3, "country": "Kazakhstan", "city": "Almaty", "amount": 180, "channel": "web"},
+  {"id": 4, "country": "Kazakhstan", "city": "Almaty", "amount": 220, "channel": "partner"},
+  {"id": 5, "country": "Russia", "city": "Moscow", "amount": 210, "channel": "web"},
+  {"id": 6, "country": "Russia", "city": "Kazan", "amount": 75, "channel": "mobile"},
+  {"id": 7, "country": "Russia", "city": "Moscow", "amount": 150, "channel": "partner"},
+  {"id": 8, "country": "Russia", "city": "Moscow", "amount": 200, "channel": "web"},
+  {"id": 9, "country": "Uzbekistan", "city": "Tashkent", "amount": 60, "channel": "web"},
+  {"id": 10, "country": "Uzbekistan", "city": "Samarkand", "amount": 110, "channel": "mobile"}
 ]
 

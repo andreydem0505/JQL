@@ -679,6 +679,160 @@ function evaluateAggregateSelection(rowContexts, aggregateFieldList, scope) {
   return result;
 }
 
+function evaluateHavingCondition(havingCondition, aggregateFields, groupRowContexts, scope) {
+  const aggregateValues = {};
+
+  if (aggregateFields) {
+    let fieldsToProcess = [];
+
+    if (aggregateFields.type === "FieldList" && aggregateFields.fields) {
+      fieldsToProcess = aggregateFields.fields;
+    }
+    else if (aggregateFields.type === "AggregateFieldList" && aggregateFields.fields) {
+      fieldsToProcess = aggregateFields.fields;
+    }
+    else if (Array.isArray(aggregateFields)) {
+      fieldsToProcess = aggregateFields;
+    }
+
+    for (const field of fieldsToProcess) {
+      if (field.type === "FieldWithAlias") {
+        const alias = field.alias;
+        const value = field.value;
+
+        if (value && value.type === "FunctionCall") {
+          aggregateValues[alias] = evaluateFunctionCall(value, groupRowContexts[0], {
+            selectMode: "aggregate",
+            rowContexts: groupRowContexts,
+            topLevelAggregate: true
+          });
+        } else if (value && value.type === "BinaryExpression") {
+          aggregateValues[alias] = evaluateNodeWithAggregates(value, { base: {}, aliases: {} }, aggregateValues, groupRowContexts, scope);
+        }
+      }
+      else if (field.type === "AggregateField") {
+        const alias = field.alias;
+        const value = field.value;
+
+        if (value && value.type === "FunctionCall") {
+          aggregateValues[alias] = evaluateFunctionCall(value, groupRowContexts[0], {
+            selectMode: "aggregate",
+            rowContexts: groupRowContexts,
+            topLevelAggregate: true
+          });
+        }
+      }
+    }
+  }
+
+  const havingContext = {
+    base: aggregateValues,
+    aliases: {}
+  };
+
+  return evaluateConditionWithAggregates(havingCondition, havingContext, aggregateValues, groupRowContexts, scope);
+}
+
+function evaluateConditionWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope) {
+  if (!node) {
+    return true;
+  }
+
+  if (node.type === "LogicalExpression") {
+    const operator = node.operator;
+    const left = evaluateConditionWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
+
+    if (operator === "and" && !left) return false;
+    if (operator === "or" && left) return true;
+
+    const right = evaluateConditionWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
+    return operator === "and" ? left && right : left || right;
+  }
+
+  if (node.type === "ComparisonExpression") {
+    const left = evaluateNodeWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
+    const right = evaluateNodeWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
+    return compareValues(left, right, node.operator);
+  }
+
+  if (node.type === "BetweenExpression") {
+    const value = evaluateNodeWithAggregates(node.value, rowCtx, aggregateValues, groupRowContexts, scope);
+    const lower = evaluateNodeWithAggregates(node.lower, rowCtx, aggregateValues, groupRowContexts, scope);
+    const upper = evaluateNodeWithAggregates(node.upper, rowCtx, aggregateValues, groupRowContexts, scope);
+
+    const valueDate = parseDate(value);
+    const lowerDate = parseDate(lower);
+    const upperDate = parseDate(upper);
+
+    if (valueDate !== null && lowerDate !== null && upperDate !== null) {
+      return valueDate >= lowerDate && valueDate <= upperDate;
+    }
+
+    return compareValues(value, lower, ">=") && compareValues(value, upper, "<=");
+  }
+
+  return Boolean(evaluateNodeWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope));
+}
+
+function evaluateNodeWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope) {
+  if (!node) {
+    return undefined;
+  }
+
+  if (node.type === "FieldPath") {
+    const steps = toPathSteps(node.segments);
+
+    if (steps.length === 1 && steps[0].type === "prop" && aggregateValues.hasOwnProperty(steps[0].key)) {
+      return aggregateValues[steps[0].key];
+    }
+
+    return readBySteps(rowCtx.base, steps);
+  }
+
+  if (node.type === "Literal") {
+    return node.value;
+  }
+
+  if (node.type === "NumberLiteral") {
+    return node.value;
+  }
+
+  if (node.type === "StringLiteral") {
+    return node.value;
+  }
+
+  if (node.type === "BinaryExpression") {
+    const left = evaluateNodeWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
+    const right = evaluateNodeWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
+
+    const leftNum = Number(left);
+    const rightNum = Number(right);
+
+    switch (node.operator) {
+      case "+":
+        return leftNum + rightNum;
+      case "-":
+        return leftNum - rightNum;
+      case "*":
+        return leftNum * rightNum;
+      case "/":
+        return rightNum !== 0 ? leftNum / rightNum : undefined;
+      default:
+        return undefined;
+    }
+  }
+
+  if (node.type === "FunctionCall") {
+    return evaluateFunctionCall(node, groupRowContexts[0], {
+      selectMode: "aggregate",
+      rowContexts: groupRowContexts,
+      topLevelAggregate: true
+    });
+  }
+
+  return undefined;
+}
+
 function groupRowContexts(rowContexts, groupByClause, scope) {
   if (!groupByClause || !groupByClause.fields || !groupByClause.fields.length) {
     return [];
@@ -748,9 +902,20 @@ export class JQLCompiler {
     }
 
     if (queryAst.groupBy) {
-      const groups = groupRowContexts(rowContexts, queryAst.groupBy, {
+      let groups = groupRowContexts(rowContexts, queryAst.groupBy, {
         selectMode: queryAst.select.mode
       });
+
+      if (queryAst.having) {
+        groups = groups.filter(group => {
+          return evaluateHavingCondition(
+            queryAst.having.condition,
+            queryAst.select.selection,
+            group.rowContexts,
+            { selectMode: queryAst.select.mode }
+          );
+        });
+      }
 
       if (queryAst.select.mode === "aggregate") {
         return groups.map(group => evaluateAggregateSelection(group.rowContexts, queryAst.select.selection, {

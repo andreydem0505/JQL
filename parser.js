@@ -5,6 +5,7 @@ const From = createToken({ name: "From", pattern: /from\b/i });
 const Where = createToken({ name: "Where", pattern: /where\b/i });
 const Group = createToken({ name: "Group", pattern: /group\b/i });
 const By = createToken({ name: "By", pattern: /by\b/i });
+const Having = createToken({ name: "Having", pattern: /having\b/i });
 const And = createToken({ name: "And", pattern: /and\b/i });
 const Or = createToken({ name: "Or", pattern: /or\b/i });
 const AliasKeyword = createToken({ name: "AliasKeyword", pattern: /alias\b/i });
@@ -64,6 +65,7 @@ const allTokens = [
     Where,
     Group,
     By,
+    Having,
     And,
     Or,
     AliasKeyword,
@@ -129,6 +131,9 @@ export class JQLParser extends CstParser {
                         $.OPTION2(() => {
                             $.SUBRULE1($.groupByClause);
                         });
+                        $.OPTION4(() => {
+                            $.SUBRULE1($.havingClause);
+                        });
                     }
                 },
                 {
@@ -137,6 +142,9 @@ export class JQLParser extends CstParser {
                         $.SUBRULE2($.fromClause);
                         $.OPTION3(() => {
                             $.SUBRULE2($.groupByClause);
+                        });
+                        $.OPTION5(() => {
+                            $.SUBRULE2($.havingClause);
                         });
                     }
                 }
@@ -260,6 +268,7 @@ export class JQLParser extends CstParser {
                 { ALT: () => $.CONSUME(Where) },
                 { ALT: () => $.CONSUME(Group) },
                 { ALT: () => $.CONSUME(By) },
+                { ALT: () => $.CONSUME(Having) },
                 { ALT: () => $.CONSUME(And) },
                 { ALT: () => $.CONSUME(Or) },
                 { ALT: () => $.CONSUME(AliasKeyword) },
@@ -398,6 +407,11 @@ export class JQLParser extends CstParser {
                     $.SUBRULE($.fieldPath, { LABEL: "field" });
                 }
             });
+        });
+
+        $.RULE("havingClause", () => {
+            $.CONSUME(Having);
+            $.SUBRULE($.orCondition);
         });
 
         $.RULE("orCondition", () => {

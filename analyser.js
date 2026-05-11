@@ -21,7 +21,8 @@ class JQLToAstVisitor extends BaseCstVisitor {
       select: this.visit(ctx.selectClause),
       from: from,
       where: ctx.whereClause ? this.visit(ctx.whereClause) : null,
-      groupBy: ctx.groupByClause ? this.visit(ctx.groupByClause) : null
+      groupBy: ctx.groupByClause ? this.visit(ctx.groupByClause) : null,
+      having: ctx.havingClause ? this.visit(ctx.havingClause) : null
     };
   }
 
@@ -355,6 +356,13 @@ class JQLToAstVisitor extends BaseCstVisitor {
     };
   }
 
+  havingClause(ctx) {
+    return {
+      type: "HavingClause",
+      condition: this.visit(ctx.orCondition)
+    };
+  }
+
   orCondition(ctx) {
     let result = this.visit(ctx.lhs[0]);
 
@@ -502,7 +510,10 @@ export const examples = [
   "select [country, total_amount: sum(amount), avg_amount: avg(amount)] from 'group_by_sales.json' group by country",
   "select [country, city, orders: count(amount), max_amount: max(amount), min_amount: min(amount)] from 'group_by_sales.json' group by country, city",
   "select [country, region_avg_amount: avg(amount)] from 'group_by_sales.json' where amount > 80 group by country",
-  "select [region, member_count: count(name)] from 'group_by_members.json' group by region"
+  "select [region, member_count: count(name)] from 'group_by_members.json' group by region",
+  "select [region, member_count: count(name)] from 'group_by_members.json' group by region having member_count > 2",
+  "select [country, total_amount: sum(amount)] from 'group_by_sales.json' group by country having total_amount > 500",
+  "select [country, city, order_count: count(id)] from 'group_by_sales.json' group by country, city having order_count >= 3"
 ];
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
