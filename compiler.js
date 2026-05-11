@@ -7,14 +7,20 @@ import { parseJQL, examples } from "./analyser.js";
 const AGGREGATE_FUNCTIONS = new Set(["sum", "avg", "count", "max", "min"]);
 const SCALAR_FUNCTIONS = new Set(["length", "trimLeft", "trimRight"]);
 
-const jsonCache = new Map();
-const sourceRowsCache = new Map();
-const pathStepsCache = new Map();
+const BINARY_OPERATORS = {
+  "+": (l, r) => Number(l) + Number(r),
+  "-": (l, r) => Number(l) - Number(r),
+  "*": (l, r) => Number(l) * Number(r),
+  "/": (l, r) => Number(r) !== 0 ? Number(l) / Number(r) : undefined
+};
 
 const LARGE_TIMESTAMP_THRESHOLD = 1e12;
 const NUMERIC_PATTERN = /^-?\d+(?:\.\d+)?$/;
 const DATE_PATTERN = /[-/:TZ ]|[A-Za-z]/;
 
+const jsonCache = new Map();           // Кэш загруженных JSON файлов
+const sourceRowsCache = new Map();     // Кэш исходных строк
+const pathStepsCache = new Map();      // Кэш преобразованных путей
 
 function cloneValue(value) {
   if (value === null || value === undefined) {
@@ -333,12 +339,6 @@ function evaluateBinaryExpression(node, rowCtx, scope) {
     topLevelAggregate: false
   });
 
-  const BINARY_OPERATORS = {
-    "+": (l, r) => Number(l) + Number(r),
-    "-": (l, r) => Number(l) - Number(r),
-    "*": (l, r) => Number(l) * Number(r),
-    "/": (l, r) => Number(l) / Number(r)
-  };
 
   const operator = BINARY_OPERATORS[node.operator];
   return operator ? operator(left, right) : undefined;
@@ -805,21 +805,8 @@ function evaluateNodeWithAggregates(node, rowCtx, aggregateValues, groupRowConte
     const left = evaluateNodeWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
     const right = evaluateNodeWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
 
-    const leftNum = Number(left);
-    const rightNum = Number(right);
-
-    switch (node.operator) {
-      case "+":
-        return leftNum + rightNum;
-      case "-":
-        return leftNum - rightNum;
-      case "*":
-        return leftNum * rightNum;
-      case "/":
-        return rightNum !== 0 ? leftNum / rightNum : undefined;
-      default:
-        return undefined;
-    }
+    const operator = BINARY_OPERATORS[node.operator];
+    return operator ? operator(left, right) : undefined;
   }
 
   if (node.type === "FunctionCall") {
