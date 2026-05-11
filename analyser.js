@@ -27,10 +27,13 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   selectClause(ctx) {
+    const strict = ctx.Strict !== undefined;
+
     if (ctx.fieldList) {
       return {
         type: "SelectClause",
         mode: "list",
+        strict: strict,
         selection: this.visit(ctx.fieldList)
       };
     }
@@ -38,6 +41,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
     return {
       type: "SelectClause",
       mode: "aggregate",
+      strict: strict,
       selection: this.visit(ctx.aggregateFieldList)
     };
   }
@@ -149,10 +153,6 @@ class JQLToAstVisitor extends BaseCstVisitor {
     return token.image;
   }
 
-  segmentIndex(ctx) {
-    return Number(ctx.NumberLiteral[0].image);
-  }
-
   functionCall(ctx) {
     return {
       type: "FunctionCall",
@@ -162,22 +162,21 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   functionName(ctx) {
-    if (ctx.Sum) {
-      return "sum";
-    } else if (ctx.Avg) {
-      return "avg";
-    } else if (ctx.Count) {
-      return "count";
-    } else if (ctx.Max) {
-      return "max";
-    } else if (ctx.Min) {
-      return "min";
-    } else if (ctx.Length) {
-      return "length";
-    }  else if (ctx.TrimLeft) {
-      return "trimLeft";
-    } else if (ctx.TrimRight) {
-      return "trimRight";
+    const tokenByName = [
+      ["Sum", "sum"],
+      ["Avg", "avg"],
+      ["Count", "count"],
+      ["Max", "max"],
+      ["Min", "min"],
+      ["Length", "length"],
+      ["TrimLeft", "trimLeft"],
+      ["TrimRight", "trimRight"]
+    ];
+
+    for (const [tokenName, functionName] of tokenByName) {
+      if (ctx[tokenName]) {
+        return functionName;
+      }
     }
   }
 
@@ -456,7 +455,6 @@ class JQLToAstVisitor extends BaseCstVisitor {
 
 
 export function parseJQL(inputText) {
-  // Лексический анализ
   const lexingResult = JQLLexer.tokenize(inputText);
 
   if (lexingResult.errors.length > 0) {
@@ -465,7 +463,6 @@ export function parseJQL(inputText) {
     return null;
   }
 
-  // Синтаксический анализ
   parserInstance.input = lexingResult.tokens;
   const cst = parserInstance.query();
 
@@ -475,7 +472,6 @@ export function parseJQL(inputText) {
     return null;
   }
 
-  // Преобразование CST в AST
   const astVisitor = new JQLToAstVisitor();
   return astVisitor.visit(cst);
 }
@@ -513,7 +509,9 @@ export const examples = [
   "select [region, member_count: count(name)] from 'group_by_members.json' group by region",
   "select [region, member_count: count(name)] from 'group_by_members.json' group by region having member_count > 2",
   "select [country, total_amount: sum(amount)] from 'group_by_sales.json' group by country having total_amount > 500",
-  "select [country, city, order_count: count(id)] from 'group_by_sales.json' group by country, city having order_count >= 3"
+  "select [country, city, order_count: count(id)] from 'group_by_sales.json' group by country, city having order_count >= 3",
+  "select strict [name, age] from 'input.json'",
+  "select strict total_sum: sum(result.success.qualityScore, result.success.effortScore) from 'input.json'",
 ];
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

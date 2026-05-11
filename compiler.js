@@ -18,9 +18,9 @@ const LARGE_TIMESTAMP_THRESHOLD = 1e12;
 const NUMERIC_PATTERN = /^-?\d+(?:\.\d+)?$/;
 const DATE_PATTERN = /[-/:TZ ]|[A-Za-z]/;
 
-const jsonCache = new Map();           // Кэш загруженных JSON файлов
-const sourceRowsCache = new Map();     // Кэш исходных строк
-const pathStepsCache = new Map();      // Кэш преобразованных путей
+const jsonCache = new Map();
+const sourceRowsCache = new Map();
+const pathStepsCache = new Map();
 
 function cloneValue(value) {
   if (value === null || value === undefined) {
@@ -287,6 +287,97 @@ function compareValues(left, right, operator) {
   return comparisons[operator] ?? false;
 }
 
+function compareBetweenValues(value, lower, upper) {
+  const valueDate = parseDate(value);
+  const lowerDate = parseDate(lower);
+  const upperDate = parseDate(upper);
+
+  if (valueDate !== null && lowerDate !== null && upperDate !== null) {
+    return valueDate >= lowerDate && valueDate <= upperDate;
+  }
+
+  return compareValues(value, lower, ">=") && compareValues(value, upper, "<=");
+}
+
+function evaluateConditionNode(node, resolveNode) {
+  if (!node) {
+    return true;
+  }
+
+  if (node.type === "LogicalExpression") {
+    const left = evaluateConditionNode(node.left, resolveNode);
+
+    if (node.operator === "and" && !left) return false;
+    if (node.operator === "or" && left) return true;
+
+    const right = evaluateConditionNode(node.right, resolveNode);
+    return node.operator === "and" ? left && right : left || right;
+  }
+
+  if (node.type === "ComparisonExpression") {
+    return compareValues(resolveNode(node.left), resolveNode(node.right), node.operator);
+  }
+
+  if (node.type === "BetweenExpression") {
+    return compareBetweenValues(
+      resolveNode(node.value),
+      resolveNode(node.lower),
+      resolveNode(node.upper)
+    );
+  }
+
+  return Boolean(resolveNode(node));
+}
+
+function getSelectionFields(selection) {
+  if (!selection) {
+    return [];
+  }
+
+  if (Array.isArray(selection)) {
+    return selection;
+  }
+
+  return selection.fields || [];
+}
+
+function buildAggregateValueMap(selection, rowContexts, scope) {
+  const aggregateValues = {};
+
+  for (const field of getSelectionFields(selection)) {
+    if (field.type === "FieldWithAlias") {
+      aggregateValues[field.alias] = resolveAggregateFieldValue(field.value, rowContexts, aggregateValues, scope);
+      continue;
+    }
+
+    if (field.type === "AggregateField") {
+      aggregateValues[field.alias] = resolveAggregateFieldValue(field.value, rowContexts, aggregateValues, scope);
+    }
+  }
+
+  return aggregateValues;
+}
+
+function resolveAggregateFieldValue(node, rowContexts, aggregateValues, scope) {
+  if (!node) {
+    return undefined;
+  }
+
+  if (node.type === "FunctionCall") {
+    return evaluateFunctionCall(node, rowContexts[0] ?? makeRowContext(undefined), {
+      selectMode: "aggregate",
+      rowContexts,
+      topLevelAggregate: true
+    });
+  }
+
+  if (node.type === "BinaryExpression") {
+    return evaluateNodeWithAggregates(node, { base: {}, aliases: {} }, aggregateValues, rowContexts, scope);
+  }
+
+  return evaluateNodeWithAggregates(node, rowContexts[0] ?? makeRowContext(undefined), aggregateValues, rowContexts, scope);
+}
+
 function makeRowContext(base, aliases = {}) {
   return {
     base,
@@ -479,45 +570,97 @@ function evaluateNode(node, rowCtx, scope) {
   return undefined;
 }
 
-function evaluateCondition(node, rowCtx, scope) {
-  if (!node) {
+function collectRequiredPathStepsFromNode(node, requirements = new Map()) {
+  if (!node || typeof node !== "object") {
+    return requirements;
+  }
+
+  if (node.type === "FieldPath") {
+    const steps = toPathSteps(node.segments || []);
+    if (steps.length) {
+      requirements.set(JSON.stringify(node.segments || []), steps);
+    }
+    return requirements;
+  }
+
+  if (node.type === "FieldWithAlias" || node.type === "AggregateField") {
+    return collectRequiredPathStepsFromNode(node.value, requirements);
+  }
+
+  if (node.type === "FunctionCall") {
+    for (const arg of node.arguments || []) {
+      collectRequiredPathStepsFromNode(arg, requirements);
+    }
+    return requirements;
+  }
+
+  if (node.type === "BinaryExpression") {
+    collectRequiredPathStepsFromNode(node.left, requirements);
+    collectRequiredPathStepsFromNode(node.right, requirements);
+    return requirements;
+  }
+
+  if (node.type === "FieldList" || node.type === "AggregateFieldList") {
+    for (const field of node.fields || []) {
+      collectRequiredPathStepsFromNode(field, requirements);
+    }
+  }
+
+  return requirements;
+}
+
+function collectRequiredPathsFromSelection(selection) {
+  const requirements = new Map();
+
+  for (const field of selection?.fields || []) {
+    collectRequiredPathStepsFromNode(field, requirements);
+  }
+
+  return Array.from(requirements.values());
+}
+
+function rowHasAllRequiredPaths(rowCtx, requiredPaths) {
+  if (!requiredPaths.length) {
     return true;
   }
 
-  if (node.type === "LogicalExpression") {
-    const operator = node.operator;
-    const left = evaluateCondition(node.left, rowCtx, scope);
+  return requiredPaths.every(steps => hasBySteps(rowCtx, steps));
+}
 
-    if (operator === "and" && !left) return false;
-    if (operator === "or" && left) return true;
+function hasBySteps(rowCtx, steps) {
+  let cursor = rowCtx.base;
+  let startIndex = 0;
 
-    const right = evaluateCondition(node.right, rowCtx, scope);
-    return operator === "and" ? left && right : left || right;
+  const firstStep = steps[0];
+  if (firstStep?.type === "prop" && Object.prototype.hasOwnProperty.call(rowCtx.aliases || {}, firstStep.key)) {
+    cursor = rowCtx.aliases[firstStep.key];
+    startIndex = 1;
   }
 
-  if (node.type === "ComparisonExpression") {
-    const left = evaluateNode(node.left, rowCtx, scope);
-    const right = evaluateNode(node.right, rowCtx, scope);
-    return compareValues(left, right, node.operator);
-  }
+  for (let i = startIndex; i < steps.length; i++) {
+    const step = steps[i];
 
-  if (node.type === "BetweenExpression") {
-    const value = evaluateNode(node.value, rowCtx, scope);
-    const lower = evaluateNode(node.lower, rowCtx, scope);
-    const upper = evaluateNode(node.upper, rowCtx, scope);
+    if (step.type === "prop") {
+      if (!isObjectLike(cursor) || !Object.prototype.hasOwnProperty.call(cursor, step.key)) {
+        return false;
+      }
 
-    const valueDate = parseDate(value);
-    const lowerDate = parseDate(lower);
-    const upperDate = parseDate(upper);
-
-    if (valueDate !== null && lowerDate !== null && upperDate !== null) {
-      return valueDate >= lowerDate && valueDate <= upperDate;
+      cursor = cursor[step.key];
+      continue;
     }
 
-    return compareValues(value, lower, ">=") && compareValues(value, upper, "<=");
+    if (!Array.isArray(cursor) || step.index < 0 || step.index >= cursor.length) {
+      return false;
+    }
+
+    cursor = cursor[step.index];
   }
 
-  return Boolean(evaluateNode(node, rowCtx, scope));
+  return true;
+}
+
+function evaluateCondition(node, rowCtx, scope) {
+  return evaluateConditionNode(node, currentNode => evaluateNode(currentNode, rowCtx, scope));
 }
 
 async function loadSourceRows(sourceRef, baseDir) {
@@ -680,98 +823,17 @@ function evaluateAggregateSelection(rowContexts, aggregateFieldList, scope) {
 }
 
 function evaluateHavingCondition(havingCondition, aggregateFields, groupRowContexts, scope) {
-  const aggregateValues = {};
+  const aggregateValues = buildAggregateValueMap(aggregateFields, groupRowContexts, scope);
 
-  if (aggregateFields) {
-    let fieldsToProcess = [];
-
-    if (aggregateFields.type === "FieldList" && aggregateFields.fields) {
-      fieldsToProcess = aggregateFields.fields;
-    }
-    else if (aggregateFields.type === "AggregateFieldList" && aggregateFields.fields) {
-      fieldsToProcess = aggregateFields.fields;
-    }
-    else if (Array.isArray(aggregateFields)) {
-      fieldsToProcess = aggregateFields;
-    }
-
-    for (const field of fieldsToProcess) {
-      if (field.type === "FieldWithAlias") {
-        const alias = field.alias;
-        const value = field.value;
-
-        if (value && value.type === "FunctionCall") {
-          aggregateValues[alias] = evaluateFunctionCall(value, groupRowContexts[0], {
-            selectMode: "aggregate",
-            rowContexts: groupRowContexts,
-            topLevelAggregate: true
-          });
-        } else if (value && value.type === "BinaryExpression") {
-          aggregateValues[alias] = evaluateNodeWithAggregates(value, { base: {}, aliases: {} }, aggregateValues, groupRowContexts, scope);
-        }
-      }
-      else if (field.type === "AggregateField") {
-        const alias = field.alias;
-        const value = field.value;
-
-        if (value && value.type === "FunctionCall") {
-          aggregateValues[alias] = evaluateFunctionCall(value, groupRowContexts[0], {
-            selectMode: "aggregate",
-            rowContexts: groupRowContexts,
-            topLevelAggregate: true
-          });
-        }
-      }
-    }
-  }
-
-  const havingContext = {
-    base: aggregateValues,
-    aliases: {}
-  };
-
-  return evaluateConditionWithAggregates(havingCondition, havingContext, aggregateValues, groupRowContexts, scope);
-}
-
-function evaluateConditionWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope) {
-  if (!node) {
-    return true;
-  }
-
-  if (node.type === "LogicalExpression") {
-    const operator = node.operator;
-    const left = evaluateConditionWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
-
-    if (operator === "and" && !left) return false;
-    if (operator === "or" && left) return true;
-
-    const right = evaluateConditionWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
-    return operator === "and" ? left && right : left || right;
-  }
-
-  if (node.type === "ComparisonExpression") {
-    const left = evaluateNodeWithAggregates(node.left, rowCtx, aggregateValues, groupRowContexts, scope);
-    const right = evaluateNodeWithAggregates(node.right, rowCtx, aggregateValues, groupRowContexts, scope);
-    return compareValues(left, right, node.operator);
-  }
-
-  if (node.type === "BetweenExpression") {
-    const value = evaluateNodeWithAggregates(node.value, rowCtx, aggregateValues, groupRowContexts, scope);
-    const lower = evaluateNodeWithAggregates(node.lower, rowCtx, aggregateValues, groupRowContexts, scope);
-    const upper = evaluateNodeWithAggregates(node.upper, rowCtx, aggregateValues, groupRowContexts, scope);
-
-    const valueDate = parseDate(value);
-    const lowerDate = parseDate(lower);
-    const upperDate = parseDate(upper);
-
-    if (valueDate !== null && lowerDate !== null && upperDate !== null) {
-      return valueDate >= lowerDate && valueDate <= upperDate;
-    }
-
-    return compareValues(value, lower, ">=") && compareValues(value, upper, "<=");
-  }
-
-  return Boolean(evaluateNodeWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope));
+  return evaluateConditionNode(havingCondition, currentNode => {
+    return evaluateNodeWithAggregates(
+      currentNode,
+      { base: aggregateValues, aliases: {} },
+      aggregateValues,
+      groupRowContexts,
+      scope
+    );
+  });
 }
 
 function evaluateNodeWithAggregates(node, rowCtx, aggregateValues, groupRowContexts, scope) {
@@ -886,6 +948,13 @@ export class JQLCompiler {
         selectMode: queryAst.select.mode,
         rowContexts
       }));
+    }
+
+    if (queryAst.select?.strict) {
+      const requiredPaths = collectRequiredPathsFromSelection(queryAst.select.selection);
+      if (requiredPaths.length) {
+        rowContexts = rowContexts.filter(rowCtx => rowHasAllRequiredPaths(rowCtx, requiredPaths));
+      }
     }
 
     if (queryAst.groupBy) {

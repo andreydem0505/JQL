@@ -125,7 +125,6 @@
   },
   {
     "id": 102,
-    "name": "Max Ivanov",
     "age": 34,
     "имя_пользователя": "max_i",
     "возраст": 34,
@@ -273,7 +272,6 @@
     "result": {
       "success": {
         "qualityScore": 9,
-        "effortScore": 9,
         "impactScore": 9
       }
     },

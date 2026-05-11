@@ -1,6 +1,7 @@
 import { createToken, Lexer, CstParser } from "chevrotain";
 
 const Select = createToken({ name: "Select", pattern: /select\b/i });
+const Strict = createToken({ name: "Strict", pattern: /strict\b/i });
 const From = createToken({ name: "From", pattern: /from\b/i });
 const Where = createToken({ name: "Where", pattern: /where\b/i });
 const Group = createToken({ name: "Group", pattern: /group\b/i });
@@ -57,10 +58,14 @@ const WhiteSpace = createToken({
     group: Lexer.SKIPPED
 });
 
+const tokenAlternatives = ($, tokens) => tokens.map(token => ({ ALT: () => $.CONSUME(token) }));
+const ruleAlternatives = (...alternatives) => alternatives.map(ALT => ({ ALT }));
+
 const allTokens = [
     WhiteSpace,
 
     Select,
+    Strict,
     From,
     Where,
     Group,
@@ -121,42 +126,31 @@ export class JQLParser extends CstParser {
 
         $.RULE("query", () => {
             $.SUBRULE($.selectClause);
-            $.OR([
-                {
-                    ALT: () => {
-                        $.SUBRULE1($.fromClause);
-                        $.OPTION(() => {
-                            $.SUBRULE1($.whereClause);
-                        });
-                        $.OPTION2(() => {
-                            $.SUBRULE1($.groupByClause);
-                        });
-                        $.OPTION4(() => {
-                            $.SUBRULE1($.havingClause);
-                        });
-                    }
+            $.OR(ruleAlternatives(
+                () => {
+                    $.SUBRULE1($.fromClause);
+                    $.OPTION(() => $.SUBRULE1($.whereClause));
+                    $.OPTION2(() => $.SUBRULE1($.groupByClause));
+                    $.OPTION4(() => $.SUBRULE1($.havingClause));
                 },
-                {
-                    ALT: () => {
-                        $.SUBRULE2($.whereClause);
-                        $.SUBRULE2($.fromClause);
-                        $.OPTION3(() => {
-                            $.SUBRULE2($.groupByClause);
-                        });
-                        $.OPTION5(() => {
-                            $.SUBRULE2($.havingClause);
-                        });
-                    }
+                () => {
+                    $.SUBRULE2($.whereClause);
+                    $.SUBRULE2($.fromClause);
+                    $.OPTION3(() => $.SUBRULE2($.groupByClause));
+                    $.OPTION5(() => $.SUBRULE2($.havingClause));
                 }
-            ]);
+            ));
         });
 
         $.RULE("selectClause", () => {
             $.CONSUME(Select);
-            $.OR([
-                { ALT: () => $.SUBRULE($.fieldList) },
-                { ALT: () => $.SUBRULE($.aggregateFieldList) },
-            ]);
+            $.OPTION(() => {
+                $.CONSUME(Strict);
+            });
+            $.OR(ruleAlternatives(
+                () => $.SUBRULE($.fieldList),
+                () => $.SUBRULE($.aggregateFieldList)
+            ));
         });
 
         $.RULE("fieldList", () => {
@@ -201,10 +195,7 @@ export class JQLParser extends CstParser {
         $.RULE("additionExpression", () => {
             $.SUBRULE($.multiplicationExpression, { LABEL: "lhs" });
             $.MANY(() => {
-                $.OR([
-                    { ALT: () => $.CONSUME(Plus) },
-                    { ALT: () => $.CONSUME(Minus) }
-                ]);
+                $.OR(tokenAlternatives($, [Plus, Minus]));
                 $.SUBRULE2($.multiplicationExpression, { LABEL: "rhs" });
             });
         });
@@ -212,27 +203,22 @@ export class JQLParser extends CstParser {
         $.RULE("multiplicationExpression", () => {
             $.SUBRULE($.atomicExpression, { LABEL: "lhs" });
             $.MANY(() => {
-                $.OR([
-                    { ALT: () => $.CONSUME(Star) },
-                    { ALT: () => $.CONSUME(Slash) }
-                ]);
+                $.OR(tokenAlternatives($, [Star, Slash]));
                 $.SUBRULE2($.atomicExpression, { LABEL: "rhs" });
             });
         });
 
         $.RULE("atomicExpression", () => {
-            $.OR([
-                { ALT: () => $.SUBRULE($.functionCall) },
-                { ALT: () => $.SUBRULE($.fieldPath) },
-                { ALT: () => $.CONSUME(NumberLiteral) },
-                {
-                    ALT: () => {
-                        $.CONSUME(LParen);
-                        $.SUBRULE($.expression);
-                        $.CONSUME(RParen);
-                    }
+            $.OR(ruleAlternatives(
+                () => $.SUBRULE($.functionCall),
+                () => $.SUBRULE($.fieldPath),
+                () => $.CONSUME(NumberLiteral),
+                () => {
+                    $.CONSUME(LParen);
+                    $.SUBRULE($.expression);
+                    $.CONSUME(RParen);
                 }
-            ]);
+            ));
         });
 
         $.RULE("fieldPath", () => {
@@ -261,35 +247,36 @@ export class JQLParser extends CstParser {
         });
 
         $.RULE("name", () => {
-            $.OR([
-                { ALT: () => $.CONSUME(Identifier) },
-                { ALT: () => $.CONSUME(Select) },
-                { ALT: () => $.CONSUME(From) },
-                { ALT: () => $.CONSUME(Where) },
-                { ALT: () => $.CONSUME(Group) },
-                { ALT: () => $.CONSUME(By) },
-                { ALT: () => $.CONSUME(Having) },
-                { ALT: () => $.CONSUME(And) },
-                { ALT: () => $.CONSUME(Or) },
-                { ALT: () => $.CONSUME(AliasKeyword) },
-                { ALT: () => $.CONSUME(AsKeyword) },
-                { ALT: () => $.CONSUME(Left) },
-                { ALT: () => $.CONSUME(Right) },
-                { ALT: () => $.CONSUME(Inner) },
-                { ALT: () => $.CONSUME(Join) },
-                { ALT: () => $.CONSUME(On) },
-                { ALT: () => $.CONSUME(After) },
-                { ALT: () => $.CONSUME(Before) },
-                { ALT: () => $.CONSUME(Between) },
-                { ALT: () => $.CONSUME(Sum) },
-                { ALT: () => $.CONSUME(Avg) },
-                { ALT: () => $.CONSUME(Count) },
-                { ALT: () => $.CONSUME(Max) },
-                { ALT: () => $.CONSUME(Min) },
-                { ALT: () => $.CONSUME(Length) },
-                { ALT: () => $.CONSUME(TrimLeft) },
-                { ALT: () => $.CONSUME(TrimRight) }
-            ]);
+            $.OR(tokenAlternatives($, [
+                Identifier,
+                Select,
+                Strict,
+                From,
+                Where,
+                Group,
+                By,
+                Having,
+                And,
+                Or,
+                AliasKeyword,
+                AsKeyword,
+                Left,
+                Right,
+                Inner,
+                Join,
+                On,
+                After,
+                Before,
+                Between,
+                Sum,
+                Avg,
+                Count,
+                Max,
+                Min,
+                Length,
+                TrimLeft,
+                TrimRight
+            ]));
         });
 
         $.RULE("aggregateField", () => {
@@ -306,16 +293,7 @@ export class JQLParser extends CstParser {
         });
 
         $.RULE("functionName", () => {
-            $.OR([
-                { ALT: () => $.CONSUME(Sum) },
-                { ALT: () => $.CONSUME(Avg) },
-                { ALT: () => $.CONSUME(Count) },
-                { ALT: () => $.CONSUME(Max) },
-                { ALT: () => $.CONSUME(Min) },
-                { ALT: () => $.CONSUME(Length) },
-                { ALT: () => $.CONSUME(TrimLeft) },
-                { ALT: () => $.CONSUME(TrimRight) }
-            ]);
+            $.OR(tokenAlternatives($, [Sum, Avg, Count, Max, Min, Length, TrimLeft, TrimRight]));
         });
 
         $.RULE("functionArgs", () => {
@@ -328,10 +306,10 @@ export class JQLParser extends CstParser {
         });
 
         $.RULE("functionArgument", () => {
-            $.OR([
-                { ALT: () => $.CONSUME(StringLiteral) },
-                { ALT: () => $.SUBRULE($.expression) }
-            ]);
+            $.OR(ruleAlternatives(
+                () => $.CONSUME(StringLiteral),
+                () => $.SUBRULE($.expression)
+            ));
         });
 
         $.RULE("sourceRef", () => {
@@ -360,11 +338,7 @@ export class JQLParser extends CstParser {
 
         $.RULE("joinClause", () => {
             $.OPTION(() => {
-                $.OR([
-                    { ALT: () => $.CONSUME(Left) },
-                    { ALT: () => $.CONSUME(Right) },
-                    { ALT: () => $.CONSUME(Inner) }
-                ]);
+                $.OR(tokenAlternatives($, [Left, Right, Inner]));
             });
             $.CONSUME(Join);
             $.SUBRULE($.sourceRef, { LABEL: "source" });
@@ -386,10 +360,10 @@ export class JQLParser extends CstParser {
             });
 
             $.MANY(() => {
-                $.OR([
-                    { ALT: () => $.SUBRULE($.legacyAliasSection) },
-                    { ALT: () => $.SUBRULE($.joinClause) }
-                ]);
+                $.OR(ruleAlternatives(
+                    () => $.SUBRULE($.legacyAliasSection),
+                    () => $.SUBRULE($.joinClause)
+                ));
             });
         });
 
@@ -431,57 +405,42 @@ export class JQLParser extends CstParser {
         });
 
         $.RULE("whereFactor", () => {
-            $.OR([
-                { ALT: () => $.SUBRULE($.comparisonCondition) },
-                {
-                    ALT: () => {
-                        $.CONSUME(LParen);
-                        $.SUBRULE($.orCondition);
-                        $.CONSUME(RParen);
-                    }
+            $.OR(ruleAlternatives(
+                () => $.SUBRULE($.comparisonCondition),
+                () => {
+                    $.CONSUME(LParen);
+                    $.SUBRULE($.orCondition);
+                    $.CONSUME(RParen);
                 }
-            ]);
+            ));
         });
 
         $.RULE("comparisonCondition", () => {
             $.SUBRULE($.whereOperand, { LABEL: "left" });
-            $.OR([
-                {
-                    ALT: () => {
-                        $.SUBRULE($.comparisonOperator);
-                        $.SUBRULE2($.whereOperand, { LABEL: "right" });
-                    }
+            $.OR(ruleAlternatives(
+                () => {
+                    $.SUBRULE($.comparisonOperator);
+                    $.SUBRULE2($.whereOperand, { LABEL: "right" });
                 },
-                {
-                    ALT: () => {
-                        $.CONSUME(Between);
-                        $.SUBRULE3($.whereOperand, { LABEL: "lower" });
-                        $.CONSUME(And);
-                        $.SUBRULE4($.whereOperand, { LABEL: "upper" });
-                    }
+                () => {
+                    $.CONSUME(Between);
+                    $.SUBRULE3($.whereOperand, { LABEL: "lower" });
+                    $.CONSUME(And);
+                    $.SUBRULE4($.whereOperand, { LABEL: "upper" });
                 }
-            ]);
+            ));
         });
 
         $.RULE("comparisonOperator", () => {
-            $.OR([
-                { ALT: () => $.CONSUME(Gte) },
-                { ALT: () => $.CONSUME(Lte) },
-                { ALT: () => $.CONSUME(Neq) },
-                { ALT: () => $.CONSUME(Gt) },
-                { ALT: () => $.CONSUME(Lt) },
-                { ALT: () => $.CONSUME(Eq) },
-                { ALT: () => $.CONSUME(After) },
-                { ALT: () => $.CONSUME(Before) }
-            ]);
+            $.OR(tokenAlternatives($, [Gte, Lte, Neq, Gt, Lt, Eq, After, Before]));
         });
 
         $.RULE("whereOperand", () => {
-            $.OR([
-                { ALT: () => $.SUBRULE($.fieldPath) },
-                { ALT: () => $.CONSUME(NumberLiteral) },
-                { ALT: () => $.CONSUME(StringLiteral) }
-            ]);
+            $.OR(ruleAlternatives(
+                () => $.SUBRULE($.fieldPath),
+                () => $.CONSUME(NumberLiteral),
+                () => $.CONSUME(StringLiteral)
+            ));
         });
 
         this.performSelfAnalysis();
