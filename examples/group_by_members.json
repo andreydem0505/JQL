@@ -1,0 +1,9 @@
+[
+  {"region": "EU", "team": "Engineering", "name": "Anna"},
+  {"region": "EU", "team": "Engineering", "name": "Max"},
+  {"region": "EU", "team": "Marketing", "name": "Lena"},
+  {"region": "US", "team": "Marketing", "name": "Ira"},
+  {"region": "EU", "team": "Support", "name": "Oleg"},
+  {"region": "US", "team": "Engineering", "name": "Kate"}
+]
+

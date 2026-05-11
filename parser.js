@@ -1,20 +1,22 @@
 import { createToken, Lexer, CstParser } from "chevrotain";
 
-const Select = createToken({ name: "Select", pattern: /select/i });
-const From = createToken({ name: "From", pattern: /from/i });
-const Where = createToken({ name: "Where", pattern: /where/i });
-const And = createToken({ name: "And", pattern: /and/i });
-const Or = createToken({ name: "Or", pattern: /or/i });
-const AliasKeyword = createToken({ name: "AliasKeyword", pattern: /alias/i });
-const AsKeyword = createToken({ name: "AsKeyword", pattern: /as/i });
-const Left = createToken({ name: "Left", pattern: /left/i });
-const Right = createToken({ name: "Right", pattern: /right/i });
-const Inner = createToken({ name: "Inner", pattern: /inner/i });
-const Join = createToken({ name: "Join", pattern: /join/i });
-const On = createToken({ name: "On", pattern: /on/i });
-const After = createToken({ name: "After", pattern: /after/i });
-const Before = createToken({ name: "Before", pattern: /before/i });
-const Between = createToken({ name: "Between", pattern: /between/i });
+const Select = createToken({ name: "Select", pattern: /select\b/i });
+const From = createToken({ name: "From", pattern: /from\b/i });
+const Where = createToken({ name: "Where", pattern: /where\b/i });
+const Group = createToken({ name: "Group", pattern: /group\b/i });
+const By = createToken({ name: "By", pattern: /by\b/i });
+const And = createToken({ name: "And", pattern: /and\b/i });
+const Or = createToken({ name: "Or", pattern: /or\b/i });
+const AliasKeyword = createToken({ name: "AliasKeyword", pattern: /alias\b/i });
+const AsKeyword = createToken({ name: "AsKeyword", pattern: /as\b/i });
+const Left = createToken({ name: "Left", pattern: /left\b/i });
+const Right = createToken({ name: "Right", pattern: /right\b/i });
+const Inner = createToken({ name: "Inner", pattern: /inner\b/i });
+const Join = createToken({ name: "Join", pattern: /join\b/i });
+const On = createToken({ name: "On", pattern: /on\b/i });
+const After = createToken({ name: "After", pattern: /after\b/i });
+const Before = createToken({ name: "Before", pattern: /before\b/i });
+const Between = createToken({ name: "Between", pattern: /between\b/i });
 
 const LSquare = createToken({ name: "LSquare", pattern: /\[/ });
 const RSquare = createToken({ name: "RSquare", pattern: /]/ });
@@ -36,17 +38,17 @@ const Eq = createToken({ name: "Eq", pattern: /=/ });
 const Dollar = createToken({ name: "Dollar", pattern: /\$/ });
 
 const NumberLiteral = createToken({ name: "NumberLiteral", pattern: /\d+(?:\.\d+)?/ });
-const Identifier = createToken({ name: "Identifier", pattern: /[^\s\$\[\]\(\),:.+\-*/'"<>=!]+/ });
+const Identifier = createToken({ name: "Identifier", pattern: /[^\s$\[\](),:.+\-*/'"<>=!]+/ });
 const StringLiteral = createToken({ name: "StringLiteral", pattern: /'[^']*'/ });
 
-const Sum = createToken({ name: "Sum", pattern: /sum/i, longer_alt: Identifier });
-const Avg = createToken({ name: "Avg", pattern: /avg/i, longer_alt: Identifier });
-const Count = createToken({ name: "Count", pattern: /count/i, longer_alt: Identifier });
-const Max = createToken({ name: "Max", pattern: /max/i, longer_alt: Identifier });
-const Min = createToken({ name: "Min", pattern: /min/i, longer_alt: Identifier });
-const Length = createToken({ name: "Length", pattern: /length/i, longer_alt: Identifier });
-const TrimLeft = createToken({ name: "TrimLeft", pattern: /trimLeft/i, longer_alt: Identifier });
-const TrimRight = createToken({ name: "TrimRight", pattern: /trimRight/i, longer_alt: Identifier });
+const Sum = createToken({ name: "Sum", pattern: /sum\b/i, longer_alt: Identifier });
+const Avg = createToken({ name: "Avg", pattern: /avg\b/i, longer_alt: Identifier });
+const Count = createToken({ name: "Count", pattern: /count\b/i, longer_alt: Identifier });
+const Max = createToken({ name: "Max", pattern: /max\b/i, longer_alt: Identifier });
+const Min = createToken({ name: "Min", pattern: /min\b/i, longer_alt: Identifier });
+const Length = createToken({ name: "Length", pattern: /length\b/i, longer_alt: Identifier });
+const TrimLeft = createToken({ name: "TrimLeft", pattern: /trimLeft\b/i, longer_alt: Identifier });
+const TrimRight = createToken({ name: "TrimRight", pattern: /trimRight\b/i, longer_alt: Identifier });
 
 const WhiteSpace = createToken({
     name: "WhiteSpace",
@@ -60,6 +62,8 @@ const allTokens = [
     Select,
     From,
     Where,
+    Group,
+    By,
     And,
     Or,
     AliasKeyword,
@@ -118,15 +122,21 @@ export class JQLParser extends CstParser {
             $.OR([
                 {
                     ALT: () => {
-                        $.SUBRULE($.whereClause);
-                        $.SUBRULE($.fromClause);
+                        $.SUBRULE1($.fromClause);
+                        $.OPTION(() => {
+                            $.SUBRULE1($.whereClause);
+                        });
+                        $.OPTION2(() => {
+                            $.SUBRULE1($.groupByClause);
+                        });
                     }
                 },
                 {
                     ALT: () => {
+                        $.SUBRULE2($.whereClause);
                         $.SUBRULE2($.fromClause);
-                        $.OPTION(() => {
-                            $.SUBRULE2($.whereClause);
+                        $.OPTION3(() => {
+                            $.SUBRULE2($.groupByClause);
                         });
                     }
                 }
@@ -159,12 +169,6 @@ export class JQLParser extends CstParser {
             });
         });
 
-        $.RULE("aggregateField", () => {
-            $.CONSUME(Identifier, { LABEL: "alias" });
-            $.CONSUME(Colon);
-            $.SUBRULE($.functionCall);
-        });
-
         $.RULE("fields", () => {
             $.AT_LEAST_ONE_SEP({
                 SEP: Comma,
@@ -176,7 +180,7 @@ export class JQLParser extends CstParser {
 
         $.RULE("field", () => {
             $.OPTION(() => {
-                $.CONSUME(Identifier, { LABEL: "alias" });
+                $.SUBRULE($.name, { LABEL: "alias" });
                 $.CONSUME(Colon);
             });
             $.SUBRULE($.expression);
@@ -240,16 +244,49 @@ export class JQLParser extends CstParser {
         });
 
         $.RULE("pathSegment", () => {
-            $.CONSUME(Identifier);
+            $.SUBRULE($.name);
             $.MANY(() => {
-                $.SUBRULE($.segmentIndex);
+                $.CONSUME(LSquare);
+                $.CONSUME(NumberLiteral);
+                $.CONSUME(RSquare);
             });
         });
 
-        $.RULE("segmentIndex", () => {
-            $.CONSUME(LSquare);
-            $.CONSUME(NumberLiteral);
-            $.CONSUME(RSquare);
+        $.RULE("name", () => {
+            $.OR([
+                { ALT: () => $.CONSUME(Identifier) },
+                { ALT: () => $.CONSUME(Select) },
+                { ALT: () => $.CONSUME(From) },
+                { ALT: () => $.CONSUME(Where) },
+                { ALT: () => $.CONSUME(Group) },
+                { ALT: () => $.CONSUME(By) },
+                { ALT: () => $.CONSUME(And) },
+                { ALT: () => $.CONSUME(Or) },
+                { ALT: () => $.CONSUME(AliasKeyword) },
+                { ALT: () => $.CONSUME(AsKeyword) },
+                { ALT: () => $.CONSUME(Left) },
+                { ALT: () => $.CONSUME(Right) },
+                { ALT: () => $.CONSUME(Inner) },
+                { ALT: () => $.CONSUME(Join) },
+                { ALT: () => $.CONSUME(On) },
+                { ALT: () => $.CONSUME(After) },
+                { ALT: () => $.CONSUME(Before) },
+                { ALT: () => $.CONSUME(Between) },
+                { ALT: () => $.CONSUME(Sum) },
+                { ALT: () => $.CONSUME(Avg) },
+                { ALT: () => $.CONSUME(Count) },
+                { ALT: () => $.CONSUME(Max) },
+                { ALT: () => $.CONSUME(Min) },
+                { ALT: () => $.CONSUME(Length) },
+                { ALT: () => $.CONSUME(TrimLeft) },
+                { ALT: () => $.CONSUME(TrimRight) }
+            ]);
+        });
+
+        $.RULE("aggregateField", () => {
+            $.SUBRULE($.name, { LABEL: "alias" });
+            $.CONSUME(Colon);
+            $.SUBRULE($.functionCall);
         });
 
         $.RULE("functionCall", () => {
@@ -300,7 +337,7 @@ export class JQLParser extends CstParser {
         $.RULE("aliasMapping", () => {
             $.SUBRULE($.fieldPath, { LABEL: "aliasSource" });
             $.CONSUME(AsKeyword);
-            $.CONSUME(Identifier, { LABEL: "aliasName" });
+            $.SUBRULE($.name, { LABEL: "aliasName" });
         });
 
         $.RULE("legacyAliasSection", () => {
@@ -324,7 +361,7 @@ export class JQLParser extends CstParser {
             $.SUBRULE($.sourceRef, { LABEL: "source" });
             $.OPTION2(() => {
                 $.CONSUME(AsKeyword);
-                $.CONSUME(Identifier, { LABEL: "joinAlias" });
+                $.SUBRULE($.name, { LABEL: "joinAlias" });
             });
             $.CONSUME(On);
             $.SUBRULE($.orCondition, { LABEL: "condition" });
@@ -336,7 +373,7 @@ export class JQLParser extends CstParser {
 
             $.OPTION(() => {
                 $.CONSUME(AsKeyword);
-                $.CONSUME(Identifier, { LABEL: "sourceAlias" });
+                $.SUBRULE($.name, { LABEL: "sourceAlias" });
             });
 
             $.MANY(() => {
@@ -350,6 +387,17 @@ export class JQLParser extends CstParser {
         $.RULE("whereClause", () => {
             $.CONSUME(Where);
             $.SUBRULE($.orCondition);
+        });
+
+        $.RULE("groupByClause", () => {
+            $.CONSUME(Group);
+            $.CONSUME(By);
+            $.AT_LEAST_ONE_SEP({
+                SEP: Comma,
+                DEF: () => {
+                    $.SUBRULE($.fieldPath, { LABEL: "field" });
+                }
+            });
         });
 
         $.RULE("orCondition", () => {

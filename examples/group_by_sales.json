@@ -1,0 +1,11 @@
+[
+  {"country": "Kazakhstan", "city": "Almaty", "amount": 120, "channel": "web"},
+  {"country": "Kazakhstan", "city": "Astana", "amount": 90, "channel": "mobile"},
+  {"country": "Kazakhstan", "city": "Almaty", "amount": 180, "channel": "web"},
+  {"country": "Russia", "city": "Moscow", "amount": 210, "channel": "web"},
+  {"country": "Russia", "city": "Kazan", "amount": 75, "channel": "mobile"},
+  {"country": "Russia", "city": "Moscow", "amount": 150, "channel": "partner"},
+  {"country": "Uzbekistan", "city": "Tashkent", "amount": 60, "channel": "web"},
+  {"country": "Uzbekistan", "city": "Samarkand", "amount": 110, "channel": "mobile"}
+]
+

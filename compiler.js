@@ -422,10 +422,11 @@ function evaluateFunctionCall(node, rowCtx, scope) {
   const argumentNodes = node.arguments || [];
 
   if (AGGREGATE_FUNCTIONS.has(functionName)) {
-    const shouldAggregateAcrossRows = scope.selectMode === "aggregate" && scope.topLevelAggregate === true;
+    const rowContexts = scope.rowContexts && scope.rowContexts.length ? scope.rowContexts : [rowCtx];
+    const shouldAggregateAcrossRows = scope.topLevelAggregate === true && rowContexts.length > 0;
 
     if (shouldAggregateAcrossRows) {
-      return evaluateAggregateAcrossRows(functionName, argumentNodes, scope.rowContexts, scope);
+      return evaluateAggregateAcrossRows(functionName, argumentNodes, rowContexts, scope);
     }
 
     const evaluatedArgs = argumentNodes.map(arg => evaluateNode(arg, rowCtx, {
@@ -613,7 +614,15 @@ async function applyJoinClause(rowContexts, joinClause, baseDir) {
   return results;
 }
 
-function projectSelectedFields(rowCtx, fieldList) {
+function projectSelectedFields(rowCtx, fieldList, groupRows = null) {
+  const activeRowContexts = groupRows && groupRows.length ? groupRows : [rowCtx];
+  const scope = {
+    selectMode: "list",
+    rowContexts: activeRowContexts,
+    groupRows: groupRows && groupRows.length ? groupRows : null,
+    topLevelAggregate: !!(groupRows && groupRows.length)
+  };
+
   if (fieldList.exclude) {
     const result = cloneValue(rowCtx.base);
     if (!isObjectLike(result)) {
@@ -636,7 +645,6 @@ function projectSelectedFields(rowCtx, fieldList) {
   }
 
   const result = {};
-  const scope = { selectMode: "list", rowContexts: [rowCtx] };
 
   fieldList.fields.forEach((field, index) => {
     if (field.type === "FieldWithAlias") {
@@ -669,6 +677,37 @@ function evaluateAggregateSelection(rowContexts, aggregateFieldList, scope) {
   }
 
   return result;
+}
+
+function groupRowContexts(rowContexts, groupByClause, scope) {
+  if (!groupByClause || !groupByClause.fields || !groupByClause.fields.length) {
+    return [];
+  }
+
+  const groups = new Map();
+
+  for (const rowCtx of rowContexts) {
+    const groupValues = groupByClause.fields.map(field => evaluateNode(field, rowCtx, {
+      ...scope,
+      rowContexts: [rowCtx],
+      topLevelAggregate: false
+    }));
+    const cacheKey = JSON.stringify(groupValues.map(value => value === undefined ? null : value));
+    const group = groups.get(cacheKey);
+
+    if (group) {
+      group.rowContexts.push(rowCtx);
+      continue;
+    }
+
+    groups.set(cacheKey, {
+      key: groupValues,
+      representative: rowCtx,
+      rowContexts: [rowCtx]
+    });
+  }
+
+  return Array.from(groups.values());
 }
 
 export class JQLCompiler {
@@ -706,6 +745,21 @@ export class JQLCompiler {
         selectMode: queryAst.select.mode,
         rowContexts
       }));
+    }
+
+    if (queryAst.groupBy) {
+      const groups = groupRowContexts(rowContexts, queryAst.groupBy, {
+        selectMode: queryAst.select.mode
+      });
+
+      if (queryAst.select.mode === "aggregate") {
+        return groups.map(group => evaluateAggregateSelection(group.rowContexts, queryAst.select.selection, {
+          baseDir: this.baseDir
+        }));
+      }
+
+      const fieldList = queryAst.select.selection;
+      return groups.map(group => projectSelectedFields(group.representative, fieldList, group.rowContexts));
     }
 
     if (queryAst.select.mode === "aggregate") {

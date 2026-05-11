@@ -20,7 +20,8 @@ class JQLToAstVisitor extends BaseCstVisitor {
       type: "Query",
       select: this.visit(ctx.selectClause),
       from: from,
-      where: ctx.whereClause ? this.visit(ctx.whereClause) : null
+      where: ctx.whereClause ? this.visit(ctx.whereClause) : null,
+      groupBy: ctx.groupByClause ? this.visit(ctx.groupByClause) : null
     };
   }
 
@@ -58,7 +59,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
   aggregateField(ctx) {
     return {
       type: "AggregateField",
-      alias: ctx.alias[0].image,
+      alias: this.visit(ctx.alias[0]),
       value: this.visit(ctx.functionCall)
     };
   }
@@ -68,7 +69,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
   }
 
   field(ctx) {
-    const alias = ctx.alias ? ctx.alias[0].image : null;
+    const alias = ctx.alias ? this.visit(ctx.alias[0]) : null;
 
     let value;
     if (ctx.functionCall) {
@@ -137,9 +138,14 @@ class JQLToAstVisitor extends BaseCstVisitor {
   pathSegment(ctx) {
     return {
       type: "PathSegment",
-      key: ctx.Identifier[0].image,
-      indexes: ctx.segmentIndex ? ctx.segmentIndex.map(indexCtx => this.visit(indexCtx)) : []
+      key: this.visit(ctx.name[0]),
+      indexes: ctx.NumberLiteral ? ctx.NumberLiteral.map(indexCtx => Number(indexCtx.image)) : []
     };
+  }
+
+  name(ctx) {
+    const token = Object.values(ctx).flat()[0];
+    return token.image;
   }
 
   segmentIndex(ctx) {
@@ -268,7 +274,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
 
   aliasMapping(ctx) {
     return {
-      alias: ctx.aliasName[0].image,
+      alias: this.visit(ctx.aliasName[0]),
       path: this.visit(ctx.aliasSource[0])
     };
   }
@@ -285,7 +291,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
   joinClause(ctx) {
     const source = this.visit(ctx.source[0]);
     const joinType = ctx.Left ? "left" : ctx.Right ? "right" : ctx.Inner ? "inner" : "outer";
-    const alias = ctx.joinAlias ? ctx.joinAlias[0].image : null;
+    const alias = ctx.joinAlias ? this.visit(ctx.joinAlias[0]) : null;
 
     if (alias) {
       const aliasTarget = source.sourcePath || { type: "FieldPath", segments: [] };
@@ -304,7 +310,7 @@ class JQLToAstVisitor extends BaseCstVisitor {
 
   fromClause(ctx) {
     const source = this.visit(ctx.source[0]);
-    const sourceAlias = ctx.sourceAlias ? ctx.sourceAlias[0].image : null;
+    const sourceAlias = ctx.sourceAlias ? this.visit(ctx.sourceAlias[0]) : null;
 
     if (sourceAlias) {
       const aliasTarget = source.sourcePath || { type: "FieldPath", segments: [] };
@@ -339,6 +345,13 @@ class JQLToAstVisitor extends BaseCstVisitor {
     return {
       type: "WhereClause",
       condition: this.visit(ctx.orCondition)
+    };
+  }
+
+  groupByClause(ctx) {
+    return {
+      type: "GroupByClause",
+      fields: ctx.field.map(fieldCtx => this.visit(fieldCtx))
     };
   }
 
@@ -484,7 +497,12 @@ export const examples = [
   "select [students.name, faculties.name] from 'input1.json'[students] as students left join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
   "select [students.name, faculties.name] from 'input1.json'[students] as students right join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
   "select [students.name, faculties.name, teachers.name] from 'students.json' as students inner join 'faculties.json' as faculties on students.facultyID = faculties.ID inner join 'teachers.json' as teachers on students.teacherID = teachers.ID",
-  "select [students.name, faculties.name] from 'input1.json'[students] as students join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID"
+  "select [students.name, faculties.name] from 'input1.json'[students] as students join 'input2.json'[faculties] as faculties on students.facultyID = faculties.ID",
+  "select [country, count(city)] from 'group_by_sales.json' group by country",
+  "select [country, total_amount: sum(amount), avg_amount: avg(amount)] from 'group_by_sales.json' group by country",
+  "select [country, city, orders: count(amount), max_amount: max(amount), min_amount: min(amount)] from 'group_by_sales.json' group by country, city",
+  "select [country, region_avg_amount: avg(amount)] from 'group_by_sales.json' where amount > 80 group by country",
+  "select [region, member_count: count(name)] from 'group_by_members.json' group by region"
 ];
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
